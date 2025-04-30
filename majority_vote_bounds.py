@@ -84,11 +84,7 @@ def iRProp(grad, func, x0,
     return x[tb]
 
 
-def optimizeTND(tandem_risks, n, delta=0.05):
-    options = dict() if options is None else options
-    max_iterations = options.get('max_iterations', 100)
-    eps = options.get('eps', 10**-9)
-
+def optimizeTND(tandem_risks, n, delta=0.05, max_iterations = 100, eps = 10**-9):
     m   = tandem_risks.shape[0]
     rho = uniform_distribution(m)
     pi  = uniform_distribution(m)
@@ -138,7 +134,7 @@ def tandem_risks(predictions, target):
     given a (model, predictions) for all of list target,
     produce a n x n array of risks, where n = len(target)
     """
-    n = len(target)
+    n = len(predictions)
     risks = np.zeros((n,n))
 
     for i, p_a in enumerate(predictions):
@@ -150,6 +146,7 @@ def tandem_risks(predictions, target):
                 )
             )
 
+    print(risks.sum() / n)
     return risks / n
 
 
