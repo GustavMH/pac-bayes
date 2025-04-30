@@ -6,6 +6,7 @@ import numpy as np
 
 from majority_vote_bounds import optimize_rho
 
+
 def group_strs(strs):
     """Groups identity strs by the first number in the string"""
 
@@ -28,38 +29,42 @@ def group_strs(strs):
     return np.array(res)
 
 
-def select_model_predictions(folder, mode="all", dataset="dataset.pkl"):
-    """ Select a subset of model checkpoints from a folder """
-    candidate_strs = Path(folder).glob("*.h5")
+def select_model_predictions(folder, mode="all", y_val=None):
+    """Select a subset of model checkpoints from a folder"""
+    candidate_strs = Path(folder).glob("*.weights.h5")
     candidate_strs = [p.name for p in candidate_strs]
     candidate_strs = sorted(candidate_strs)
 
-    def model_to_val_file(name):
+    def get_model_files(name):
         base = re.match("(.+?).weights.h5", name)[1]
-        path = folder / f"{base}_val_predictions.pkl"
-        with open(path, "rb") as f:
-            return pickle.load(f)
+        val = open(folder / f"{base}_val_predictions.pkl", "rb")
+        test = open(folder / f"{base}_test_predictions.pkl", "rb")
+        return pickle.load(val), pickle.load(test)
 
     def best_pred(preds, truth):
         """
         Given a sequence of predictions, evaluate for
         accuracy against y_true, return the best
         """
-        return max([
-            (pred,
-             sum([
-                 (t > .5) == (p > .5)
-                 for (t,p) in zip(truth, pred)
-             ]) / len(pred))
-            for pred in preds
-        ], key=lambda x: x[1])[0]
+        return max(
+            [
+                (
+                    pred,
+                    sum([(t > 0.5) == (p > 0.5) for (t, p) in zip(truth, pred)])
+                    / len(pred),
+                )
+                for pred in preds
+            ],
+            key=lambda x: x[1],
+        )[0]
 
     match mode:
         case "all":
-            return np.array([model_to_val_file(s) for s in candidate_strs])
+            res = [get_model_files(s) for s in candidate_strs]
+            val = [x[0] for x in res]
+            test = [x[1] for x in res]
+            return np.array(val), np.array(test)
         case "best":
-            y_val = pickle.load(open(folder / dataset, "rb"))["y_val"]
-
             candidate_strs = group_strs(candidate_strs)
             val_preds = [[model_to_val_file(s) for s in ss] for ss in candidate_strs]
             best_preds = [best_pred(model_preds, y_val) for model_preds in val_preds]
@@ -70,14 +75,19 @@ def select_model_predictions(folder, mode="all", dataset="dataset.pkl"):
             last_strs = [model[-1] for model in candidate_strs]
             return np.array([model_to_val_file(s) for s in last_strs])
 
-def ensemble_predictions(predictions, target):
-    bound, rho, lam = optimize_rho(predictions, target)
-    # TODO argmax
-    return (predictions * rho[:,None]).mean(axis=0) > .5
 
-reload(majority_vote_bounds)
+def ensemble_predictions(rho, predictions):
+    # TODO argmax
+    return (predictions * rho[:, None]).sum(axis=0) > .5
+
+
 folder = Path("moon_models")
-y_val = pickle.load(open(folder / "dataset.pkl", "rb"))["y_val"]
-preds_models = select_model_predictions(folder, "best")
-preds_models = (preds_models.squeeze() > .5).astype(np.float64)
-ensemble_predictions(preds_models, y_val)
+dataset = pickle.load(open(folder / "dataset.pkl", "rb"))
+y_val = dataset["y_val"]
+y_test = dataset["y_test"]
+preds_val, preds_test = select_model_predictions(folder, "all", y_val=y_val)
+preds_models_val = (preds_val.squeeze() > 0.5).astype(np.float64)
+preds_models_test = (preds_test.squeeze() > 0.5).astype(np.float64)
+bound, rho, lam = optimize_rho(preds_models_val, y_val)
+preds_ensemble_test = ensemble_predictions(rho, preds_models_test)
+np.mean(preds_ensemble_test == y_test), max([np.mean(p == y_test) for p in preds_models_test])
