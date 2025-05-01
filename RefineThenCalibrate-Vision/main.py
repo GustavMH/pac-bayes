@@ -3,10 +3,14 @@ import torch
 import wandb
 import pandas as pd
 import torchvision.transforms as transforms
+import numpy as np
+import pickle
 
 from argparse import ArgumentParser
+from pathlib import Path
 from torch.utils.data import DataLoader, Subset
 from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.callbacks import Callback
 from sklearn.model_selection import train_test_split
 from lightning.pytorch import Trainer, seed_everything
 from torchvision.datasets import CIFAR10, CIFAR100, SVHN
@@ -14,6 +18,31 @@ from torchvision.datasets import CIFAR10, CIFAR100, SVHN
 from resnet import ResNet18
 from wide_resnet import WideResNet
 from utils import CalibrationRefinementTSModule, Cutout
+
+class CheckpointEval(Callback):
+    def __init__(self, every_n_epochs, name, folder):
+        self.every_n_epochs = every_n_epochs
+        self.name = name
+        self.folder = folder
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        epoch = trainer.current_epoch
+        if (epoch + 1) % self.every_n_epochs == 0:
+            folder = Path(self.folder)
+            folder.mkdir(exist_ok=True)
+
+            model = pl_module.model
+
+            device = pl_module.device
+            val_loader, test_loader = trainer.val_dataloaders
+
+            test_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in test_loader])
+            with open(self.folder / f"{self.name}_{epoch:02d}_test_predictions.pkl", "wb") as f:
+                pickle.dump(test_pred, f)
+
+            val_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in val_loader])
+            with open(self.folder / f"{self.name}_{epoch:02d}_val_predictions.pkl", "wb") as f:
+                pickle.dump(val_pred, f)
 
 def main(args):
     # Training set transforms
@@ -74,16 +103,30 @@ def main(args):
 
         # Logging config
         model_name = args.run_name + '_seed' + str(seed)
-        project = args.dataset + '_' + args.model
-        save_dir = './experiment_results/'+ args.dataset+'_' + args.model+'/'
+        save_dir = args.folder + args.dataset + '_' + args.model + '/'
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-        wandb_logger = WandbLogger(project=project, save_dir=save_dir, name=model_name, log_model=False)
+        wandb_logger = WandbLogger(
+            project=args.project,
+            save_dir=save_dir,
+            name=model_name,
+            log_model=False
+        )
         for arg in vars(args):
             wandb_logger.experiment.config[arg] = getattr(args, arg)
 
+        checkpointing = CheckpointEval(
+            every_n_epochs = 20,
+            folder = Path(args.folder),
+            name = f"{args.dataset}_{args.model}_run_{seed}"
+        )
+
         # Lightning trainer
-        trainer = Trainer(logger=wandb_logger, max_epochs=args.epochs)
+        trainer = Trainer(
+            logger=wandb_logger,
+            max_epochs=args.epochs,
+            callbacks=[checkpointing]
+        )
 
         # Perform a new train-val split for every seed
         train_indices, val_indices = train_test_split(list(range(len(train_set))), train_size=args.train_proportion, random_state=seed)
@@ -106,7 +149,11 @@ def main(args):
         lightning_module = CalibrationRefinementTSModule(model, args.lr_scheduler)
 
         # Training
-        trainer.fit(model=lightning_module, train_dataloaders=train_loader, val_dataloaders=[val_loader, test_loader])
+        trainer.fit(
+            model=lightning_module,
+            train_dataloaders=train_loader,
+            val_dataloaders=[val_loader, test_loader],
+        )
 
         # Logging run to csv for paper tables and figures
         logs = pd.DataFrame(lightning_module.logs)
@@ -160,8 +207,10 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--lr_scheduler', type=str, default='step')
     parser.add_argument('--batch_size', type=int, default=128)
-    parser.add_argument('--num_workers', type=int, default=12)
+    parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--epochs', type=int, default=300)
+    parser.add_argument('--folder', type=str, default="./results")
+    parser.add_argument('--project', type=str)
     if torch.cuda.is_available():
         parser.add_argument('--accelerator', type=str, default='gpu')
     else:
