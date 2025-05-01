@@ -13,7 +13,7 @@ from keras.src.callbacks.callback import Callback
 def plot_training_history(history, path="history.png"):
     plt.plot(history.history["loss"], label="Train")
     plt.plot(history.history["val_loss"], label="Validation")
-    plt.plot(1-history.history["accuracy"], label="1-accuracy")
+    plt.plot(1-np.array(history.history["val_accuracy"]), label="1 - val_accuracy")
     plt.legend()
     plt.savefig(path)
     plt.close()
