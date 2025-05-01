@@ -130,8 +130,8 @@ def main(n=None):
 
 
     n_train, n_test, n_val = 100, 1000, 100
-    X, y = make_moons(n_samples=n_train+n_test+n_val, noise=0.5, random_state=experiment_n)
-    X_test, y_test = make_moons(n_samples=n_test, noise=0.1, random_state=experiment_n)
+    X, y = make_moons(n_samples=n_train+n_test+n_val, noise=0.5, random_state=int(experiment_n))
+    X_test, y_test = make_moons(n_samples=n_test, noise=0.1, random_state=int(experiment_n))
 
     X_train, X_val = X[:n_train], X[-n_val:]
     y_train, y_val = y[:n_train], y[-n_val:]
