@@ -120,7 +120,8 @@ def main(n=None):
 
         parser = ArgumentParser(prog="Train models that predict classes of the make_moons function")
         parser.add_argument("-n", help="experiment number")
-        experiment_n = parser.parse_args()["n"]
+        experiment_n = parser.parse_args().n
+        print(experiment_n, parser.parse_args())
     else:
         experiment_n = int(n)
 
@@ -148,7 +149,7 @@ def main(n=None):
     with open(folder / "moon_dataset.pkl", "wb") as f:
         pickle.dump(dataset, f)
 
-    for i in range(1):
+    for i in range(30):
         model = train_model(dataset, folder, name = f"moon_model_{i}")
 
 if __name__ == "__main__":
