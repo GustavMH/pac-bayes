@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 import numpy as np
 import pickle
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, BooleanOptionalAction
 from pathlib import Path
 from torch.utils.data import DataLoader, Subset
 from lightning.pytorch.loggers import WandbLogger
@@ -57,6 +57,8 @@ def main(args):
         transforms.ToTensor()
     ])
 
+    data_folder = "/scratch/zvq211_data" if args.scratch else "./data"
+
     if args.dataset == 'cifar10':
         normalize = transforms.Normalize(
             mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
@@ -64,9 +66,9 @@ def main(args):
         )
         random_transform.transforms.append(normalize)
         fixed_transform.transforms.append(normalize)
-        train_set = CIFAR10(root='./data', train=True, transform=random_transform, download=True)
-        val_set = CIFAR10(root='./data', train=True, transform=fixed_transform, download=True)
-        test_set = CIFAR10(root='./data', train=False, transform=fixed_transform, download=True)
+        train_set = CIFAR10(root=data_folder, train=True, transform=random_transform, download=True)
+        val_set = CIFAR10(root=data_folder, train=True, transform=fixed_transform, download=True)
+        test_set = CIFAR10(root=data_folder, train=False, transform=fixed_transform, download=True)
         num_classes = 10
 
     elif args.dataset == 'cifar100':
@@ -76,9 +78,9 @@ def main(args):
         )
         random_transform.transforms.append(normalize)
         fixed_transform.transforms.append(normalize)
-        train_set = CIFAR100(root='./data', train=True, transform=random_transform, download=True)
-        val_set = CIFAR100(root='./data', train=True, transform=fixed_transform, download=True)
-        test_set = CIFAR100(root='./data', train=False, transform=fixed_transform, download=True)
+        train_set = CIFAR100(root=data_folder, train=True, transform=random_transform, download=True)
+        val_set = CIFAR100(root=data_folder, train=True, transform=fixed_transform, download=True)
+        test_set = CIFAR100(root=data_folder, train=False, transform=fixed_transform, download=True)
         num_classes = 100
 
     elif args.dataset == 'svhn':
@@ -88,9 +90,9 @@ def main(args):
         )
         random_transform.transforms.append(normalize)
         fixed_transform.transforms.append(normalize)
-        train_set = SVHN(root='./data', split='train', transform=random_transform, download=True)
-        val_set = SVHN(root='./data', split='train', transform=fixed_transform, download=True)
-        test_set = SVHN(root='./data', split='test', transform=fixed_transform, download=True)
+        train_set = SVHN(root=data_folder, split='train', transform=random_transform, download=True)
+        val_set = SVHN(root=data_folder, split='train', transform=fixed_transform, download=True)
+        test_set = SVHN(root=data_folder, split='test', transform=fixed_transform, download=True)
         num_classes = 10
 
     else:
@@ -210,6 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--folder', type=str, default="./results")
+    parser.add_argument('--scratch', type=bool, default=False, action=BooleanOptionalAction)
     parser.add_argument('--project', type=str)
     if torch.cuda.is_available():
         parser.add_argument('--accelerator', type=str, default='gpu')
