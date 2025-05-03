@@ -8,43 +8,15 @@ import pickle
 
 from argparse import ArgumentParser, BooleanOptionalAction
 from pathlib import Path
-from torch.utils.data import DataLoader, Subset
-from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import Callback
 from sklearn.model_selection import train_test_split
-from lightning.pytorch import Trainer, seed_everything
 from torchvision.datasets import CIFAR10, CIFAR100, SVHN
+from torch.utils.data import DataLoader, Subset
 
-from resnet import ResNet18
-from wide_resnet import WideResNet
-from utils import CalibrationRefinementTSModule, Cutout
 
-class CheckpointEval(Callback):
-    def __init__(self, every_n_epochs, name, folder):
-        self.every_n_epochs = every_n_epochs
-        self.name = name
-        self.folder = folder
 
-    def on_validation_epoch_end(self, trainer, pl_module):
-        epoch = trainer.current_epoch
-        if (epoch + 1) % self.every_n_epochs == 0:
-            folder = Path(self.folder)
-            folder.mkdir(exist_ok=True)
+def load_dataset(dataset):
+    from utils import Cutout
 
-            model = pl_module.model
-
-            device = pl_module.device
-            val_loader, test_loader = trainer.val_dataloaders
-
-            test_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in test_loader])
-            with open(self.folder / f"{self.name}_{epoch:02d}_test_predictions.pkl", "wb") as f:
-                pickle.dump(test_pred, f)
-
-            val_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in val_loader])
-            with open(self.folder / f"{self.name}_{epoch:02d}_val_predictions.pkl", "wb") as f:
-                pickle.dump(val_pred, f)
-
-def main(args):
     # Training set transforms
     random_transform = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -57,9 +29,10 @@ def main(args):
         transforms.ToTensor()
     ])
 
-    data_folder = "/scratch/zvq211_data" if args.scratch else "./data"
 
-    if args.dataset == 'cifar10':
+    data_folder = "/scratch/zvq211_data" if Path("/scratch").exists() else "./data"
+
+    if dataset == 'cifar10':
         normalize = transforms.Normalize(
             mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
             std=[x / 255.0 for x in [63.0, 62.1, 66.7]]
@@ -71,7 +44,7 @@ def main(args):
         test_set = CIFAR10(root=data_folder, train=False, transform=fixed_transform, download=True)
         num_classes = 10
 
-    elif args.dataset == 'cifar100':
+    elif dataset == 'cifar100':
         normalize = transforms.Normalize(
             mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
             std=[x / 255.0 for x in [63.0, 62.1, 66.7]]
@@ -83,7 +56,7 @@ def main(args):
         test_set = CIFAR100(root=data_folder, train=False, transform=fixed_transform, download=True)
         num_classes = 100
 
-    elif args.dataset == 'svhn':
+    elif dataset == 'svhn':
         normalize = transforms.Normalize(
             mean=[x / 255.0 for x in[109.9, 109.7, 113.8]],
             std=[x / 255.0 for x in [50.1, 50.6, 50.8]]
@@ -97,6 +70,45 @@ def main(args):
 
     else:
         raise Exception('Oops, requested dataset does not exist!')
+
+    return train_set, val_set, test_set, num_classes
+
+
+def main(args):
+    from lightning.pytorch.loggers import WandbLogger
+    from lightning.pytorch.callbacks import Callback
+    from lightning.pytorch import Trainer, seed_everything
+
+    from resnet import ResNet18
+    from wide_resnet import WideResNet
+    from .utils import CalibrationRefinementTSModule, Cutout
+
+    class CheckpointEval(Callback):
+        def __init__(self, every_n_epochs, name, folder):
+            self.every_n_epochs = every_n_epochs
+            self.name = name
+            self.folder = folder
+
+        def on_validation_epoch_end(self, trainer, pl_module):
+            epoch = trainer.current_epoch
+            if (epoch + 1) % self.every_n_epochs == 0:
+                folder = Path(self.folder)
+                folder.mkdir(exist_ok=True)
+
+                model = pl_module.model
+
+                device = pl_module.device
+                val_loader, test_loader = trainer.val_dataloaders
+
+                test_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in test_loader])
+                with open(self.folder / f"{self.name}_{epoch:02d}_test_predictions.pkl", "wb") as f:
+                    pickle.dump(test_pred, f)
+
+                val_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in val_loader])
+                with open(self.folder / f"{self.name}_{epoch:02d}_val_predictions.pkl", "wb") as f:
+                    pickle.dump(val_pred, f)
+
+    train_set, val_set, test_set, num_classes = load_dataset(args.dataset)
 
     # We run for the specified number of seeds.
     for i in range(args.seeds_per_job):
@@ -212,7 +224,6 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--folder', type=str, default="./results")
-    parser.add_argument('--scratch', type=bool, default=False, action=BooleanOptionalAction)
     parser.add_argument('--project', type=str)
     if torch.cuda.is_available():
         parser.add_argument('--accelerator', type=str, default='gpu')
