@@ -152,6 +152,34 @@ def optimizeTND(tandem_risks, n, delta=0.05, max_iterations=100, eps=10**-9):
     return (min(1.0, 4 * b), softmax(rho), lam)
 
 
+def optimizeLamb(emp_risks, n, delta=0.05, eps=10**-9, abc_pi=None):
+    """Optimize PAC-Bayes-Lambda-bound:"""
+    m = len(emp_risks)
+    n = float(n)
+    pi  = uniform_distribution(m) if abc_pi is None else np.copy(abc_pi)
+    rho = uniform_distribution(m) if abc_pi is None else np.copy(abc_pi)
+    KL = kl(rho,pi)
+
+    lamb = 1.0
+    emp_risk = np.average(emp_risks, weights=rho)
+
+    upd = emp_risk / (1.0 - lamb/2.0) + (KL + log((2.0*sqrt(n))/delta))/(lamb*(1.0-lamb/2.0)*n)
+    bound = upd+2*eps
+
+    while bound-upd > eps:
+        bound = upd
+        lamb = 2.0 / (sqrt((2.0*n*emp_risk)/(KL+log(2.0*sqrt(n)/delta)) + 1.0) + 1.0)
+        for h in range(m):
+            rho[h] = pi[h]*exp(-lamb*n*emp_risks[h])
+        rho /= np.sum(rho)
+
+        emp_risk = np.average(emp_risks, weights=rho)
+        KL = kl(rho,pi)
+
+        upd = emp_risk / (1.0 - lamb/2.0) + (KL + log((2.0*sqrt(n))/delta))/(lamb*(1.0-lamb/2.0)*n)
+    return bound, rho, lamb
+
+
 def tandem_risks(preds, targs):
     """
     given a array of (models, predictions) for all of list target,
@@ -166,6 +194,41 @@ def tandem_risks(preds, targs):
             if i != j:
                 tandem_risks[j,i] += tand
     return tandem_risks
+
+
+def oob_tandem_risks(preds, targs):
+    """
+    Calculate a (model, model) size array of risk scores.
+
+    Predictions from an out-of-bag (unused for optimization) validation
+    set; the PREDS array has shape (model, prediction) and contains np.nan where
+    no prediction has been made, the TARGS array contains the dataset from which
+    the validation set has been drawn
+    """
+    # TODO test
+
+    m = len(preds)
+    tandem_risks = np.zeros((m,m))
+    n_intersects = np.zeros((m,m))
+
+    for i, preds_a in enumerate(preds):
+        for j, preds_b in enumerate(preds):
+            tandem_risks[i,j] = np.sum(
+                np.logical_and(
+                    preds_a != targs,
+                    preds_b != targs
+                )
+            )
+            # n becomes min(|D_i|)
+            n_intersects = np.nansum(preds_a * preds_b)
+
+    return tandem_risks / n_intersects
+
+
+def optimize_rho_oob(predictions, target, n):
+    risks = oob_tandem_risks(predictions, target)
+    bound, rho, lam = optimizeTND(risks, n)
+    return bound, rho, lam
 
 
 def optimize_rho(predictions, target):
