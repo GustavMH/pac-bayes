@@ -81,7 +81,7 @@ def main(args):
 
     from resnet import ResNet18
     from wide_resnet import WideResNet
-    from .utils import CalibrationRefinementTSModule, Cutout
+    from utils import CalibrationRefinementTSModule, Cutout
 
     class CheckpointEval(Callback):
         def __init__(self, every_n_epochs, name, folder):

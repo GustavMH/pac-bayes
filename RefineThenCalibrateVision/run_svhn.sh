@@ -2,7 +2,7 @@
 
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --exclude=hendrixgpu06fl,hendrixgpu09fl,hendrixgpu10fl,hendrixgpu17fl,hendrixgpu18fl,hendrixgpu26fl
+#SBATCH --exclude=hendrixgpu06fl,hendrixgpu09fl,hendrixgpu10fl,hendrixgpu17fl,hendrixgpu18fl,hendrixgpu19fl,hendrixgpu26fl
 
 source ~/pac-bayes/venv/bin/activate
 python main.py \
