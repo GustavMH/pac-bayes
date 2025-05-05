@@ -213,21 +213,23 @@ def oob_tandem_risks(preds, targs):
 
     for i, preds_a in enumerate(preds):
         for j, preds_b in enumerate(preds):
+            idxs = np.logical_and(~np.isnan(preds_a), ~np.isnan(preds_b))
+
             tandem_risks[i,j] = np.sum(
                 np.logical_and(
-                    preds_a != targs,
-                    preds_b != targs
+                    preds_a[idxs] != targs[idxs],
+                    preds_b[idxs] != targs[idxs]
                 )
             )
-            # n becomes min(|D_i|)
-            n_intersects = np.nansum(preds_a * preds_b)
 
-    return tandem_risks / n_intersects
+            n_intersects[i,j] = np.sum(idxs)
 
+    #print(tandem_risks / n_intersects, n_intersects.min())
+    return tandem_risks / n_intersects, n_intersects.min()
 
-def optimize_rho_oob(predictions, target, n):
-    risks = oob_tandem_risks(predictions, target)
-    bound, rho, lam = optimizeTND(risks, n)
+def optimize_rho_oob(predictions, target):
+    risks, n_min = oob_tandem_risks(predictions, target)
+    bound, rho, lam = optimizeTND(risks, n_min)
     return bound, rho, lam
 
 
@@ -235,3 +237,4 @@ def optimize_rho(predictions, target):
     risks = tandem_risks(predictions, target)
     bound, rho, lam = optimizeTND(risks, len(target))
     return bound, rho, lam
+
