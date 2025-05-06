@@ -4,6 +4,7 @@ import pickle
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from pathlib import Path
 from functools import cache
 from majority_vote_bounds import optimize_rho, optimize_rho_oob
@@ -24,7 +25,8 @@ def nan_argmax(arr):
     res[idxs] = argmax[idxs]
     return res
 
-def make_rho_ensemble(subset_idx, dataset):
+
+def make_rho_ensemble_oob(subset_idx, dataset):
     preds_test = dataset["predictions_test"][*subset_idx.T]
     preds_val = dataset["predictions_validation"][*subset_idx.T]
     preds_val = nan_argmax(preds_val)
@@ -77,32 +79,116 @@ def select_models(dataset, mode):
 
             return np.array((np.arange(len(model_idx)), model_idx)).T
 
-imdb = np.load("imdb_predictions.npz")
-idxs = np.array(select_models(imdb, "all"))
-idxs_best = np.array(select_models(imdb, "best"))
+def plot_bootstrap():
+    imdb = np.load("imdb_predictions.npz")
+    idxs = np.array(select_models(imdb, "all"))
+    idxs_best = np.array(select_models(imdb, "best"))
 
-n_iter = 5
-X = np.arange(2,31)
+    n_iter = 5
+    X = np.arange(2,21)
 
-rho_acc = np.zeros((n_iter, len(X)))
-uni_acc = np.zeros((n_iter, len(X)))
-best_acc = np.zeros((n_iter, len(X)))
+    rho_acc = np.zeros((n_iter, len(X)))
+    uni_acc = np.zeros((n_iter, len(X)))
+    best_acc = np.zeros((n_iter, len(X)))
 
-for i in range(n_iter):
-    print(i)
-    subsets_models = [np.random.choice(np.arange(50),i)for i in X]
-    subsets_chkpnt = [np.array([(i,j) for i in s for j in np.arange(10)]) for s in subsets_models]
+    for i in range(n_iter):
+        print(i)
+        subsets_models = [np.random.choice(np.arange(50),i)for i in X]
+        subsets_chkpnt = [np.array([(i,j) for i in s for j in np.arange(10)]) for s in subsets_models]
 
-    rho_acc[i] = np.array([make_rho_ensemble(subset, imdb) for subset in subsets_chkpnt])
-    uni_acc[i] = np.array([make_uniform_ensemble(subset, imdb) for subset in subsets_chkpnt])
-    best_acc[i] = np.array([make_rho_ensemble(idxs_best[subset], imdb) for subset in subsets_models])
+        rho_acc[i] = np.array([make_rho_ensemble(subset, imdb) for subset in subsets_chkpnt])
+        uni_acc[i] = np.array([make_uniform_ensemble(subset, imdb) for subset in subsets_chkpnt])
+        best_acc[i] = np.array([make_early_stopping(idxs_best[subset], imdb) for subset in subsets_models])
 
-plt.plot(X,uni_acc.mean(0), label="Uniform ensemble, all models in training run")
-plt.plot(X,rho_acc.mean(0), label="PAC-Bayes ensemble, all models in training run")
-plt.plot(X,best_acc.mean(0), label="Uniform ensemble, best model per training run")
-plt.xlabel("Training runs")
-plt.ylabel("Accuracy")
-plt.title("Ensembles IMDB")
-plt.legend()
-plt.savefig("new_ens.png")
-plt.close()
+    plt.plot(X,uni_acc.mean(0), label="Uniform ensemble, all models in training run")
+    plt.plot(X,rho_acc.mean(0), label="PAC-Bayes ensemble, all models in training run")
+    plt.plot(X,best_acc.mean(0), label="Uniform ensemble, best model per training run")
+    plt.xlabel("Training runs")
+    plt.ylabel("Accuracy")
+    plt.title(f"Ensembles {ds_name}")
+    plt.legend()
+    plt.savefig(f"{ds_name}_ens.png")
+    plt.close()
+
+    for ds_name in ["cifar10", "cifar100", "svhn"]:
+        ds = np.load(f"{ds_name}_predictions.npz")
+        idxs = np.array(select_models(ds, "all"))
+        idxs_best = np.array(select_models(ds, "best"))
+
+        n_iter = 5
+        X = np.arange(2,21)
+
+        rho_acc = np.zeros((n_iter, len(X)))
+        uni_acc = np.zeros((n_iter, len(X)))
+        best_acc = np.zeros((n_iter, len(X)))
+
+        for i in range(n_iter):
+            print(i)
+            subsets_models = [np.random.choice(np.arange(30),i) for i in X]
+            subsets_chkpnt = [np.array([(i,j) for i in s for j in np.arange(10)]) for s in subsets_models]
+
+            rho_acc[i] = np.array([make_rho_ensemble(subset, ds) for subset in subsets_chkpnt])
+            uni_acc[i] = np.array([make_uniform_ensemble(subset, ds) for subset in subsets_chkpnt])
+            best_acc[i] = np.array([make_early_stopping(idxs_best[subset], imdb) for subset in subsets_models])
+            #best_acc[i] = np.array([make_rho_ensemble(idxs_best[subset], ds) for subset in subsets_models])
+
+        np.savez(f"{ds_name}_graph.npz" )
+
+        plt.plot(X,uni_acc.mean(0), label="Uniform ensemble, all models in training run")
+        plt.plot(X,rho_acc.mean(0), label="PAC-Bayes ensemble, all models in training run")
+        plt.plot(X,best_acc.mean(0), label="Uniform ensemble, best model per training run")
+        plt.xlabel("Training runs")
+        plt.ylabel("Accuracy")
+        plt.title(f"Ensembles {ds_name}")
+        plt.legend()
+        plt.savefig(f"{ds_name}_ens.png")
+        plt.close()
+
+def make_rho_ensemble(subset_idx, dataset):
+    preds_test = dataset["predictions_test"][*subset_idx.T]
+    preds_val = dataset["predictions_validation"][*subset_idx.T]
+    val_idx = ~np.isnan(preds_val[0, :, 0])
+    preds_val = preds_val[:, val_idx, :].argmax(-1)
+    labels_val = dataset["labels_validation"][val_idx]
+    bound, rho, lam = optimize_rho(preds_val, labels_val)
+    preds_ensemble_test = ensemble_predictions_AVG(rho, preds_test)
+    return (preds_ensemble_test == dataset["labels_test"]).mean()
+
+for ds_name, n_iter, n_checkpoints in [
+        ("imdb", 50, 10),
+        ("cifar10", 30, 15),
+        ("cifar100", 30, 15),
+        ("svhn", 30, 15)
+]:
+    ds_npz = np.load(f"{ds_name}_predictions.npz")
+    ds = dict([(key, ds_npz[key]) for key in ds_npz.keys()])
+
+    #idxs = np.array(select_models(ds, "all"))
+    X = np.arange(2,n_checkpoints+1)
+
+    rho_acc = np.zeros((n_iter, len(X)))
+    uni_acc = np.zeros((n_iter, len(X)))
+    ear_acc = np.zeros((n_iter, len(X)))
+
+    for trail_idx in tqdm(np.arange(n_iter)):
+        chkpnts = [np.unique(np.linspace(0,len(X),i).round()).astype(np.int64) for i in X]
+        subsets = [np.array([(trail_idx,c) for c in cs]) for cs in chkpnts]
+
+        rho_acc[trail_idx] = np.array([make_rho_ensemble(subset, ds) for subset in subsets])
+        uni_acc[trail_idx] = np.array([make_uniform_ensemble(subset, ds) for subset in subsets])
+        ear_acc[trail_idx] = np.array([make_early_stopping(subset, ds) for subset in subsets])
+
+    np.savez(f"{ds_name}_graph_same_run.npz", rho_acc=rho_acc, uni_acc=uni_acc, ear_acc=ear_acc)
+
+    plt.plot(X, np.median(uni_acc, axis=0), label="Uniform ensemble of subset")
+    plt.fill_between(X, np.quantile(uni_acc, .25, axis=0), np.quantile(uni_acc, .75, axis=0), alpha=0.2)
+    plt.plot(X, np.median(rho_acc, axis=0), label="PAC-Bayes ensemble of subset")
+    plt.fill_between(X, np.quantile(rho_acc, .25, axis=0), np.quantile(rho_acc, .75, axis=0), alpha=0.2)
+    plt.plot(X, np.median(ear_acc, axis=0), label="Best checkpoint")
+    plt.fill_between(X, np.quantile(ear_acc, .25, axis=0), np.quantile(ear_acc, .75, axis=0), alpha=0.2)
+    plt.xlabel("Checkpoints ($N$)")
+    plt.ylabel("Accuracy")
+    plt.title(f"Ensembles {ds_name}")
+    plt.legend()
+    plt.savefig(f"{ds_name}_ens_same_run.png")
+    plt.close()

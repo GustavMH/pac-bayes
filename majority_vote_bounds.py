@@ -224,7 +224,6 @@ def oob_tandem_risks(preds, targs):
 
             n_intersects[i,j] = np.sum(idxs)
 
-    #print(tandem_risks / n_intersects, n_intersects.min())
     return tandem_risks / n_intersects, n_intersects.min()
 
 def optimize_rho_oob(predictions, target):
