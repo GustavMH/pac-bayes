@@ -154,6 +154,7 @@ def make_rho_ensemble(subset_idx, dataset):
     preds_ensemble_test = ensemble_predictions_AVG(rho, preds_test)
     return (preds_ensemble_test == dataset["labels_test"]).mean()
 
+# TODO n_iter and n_checkpoints should come from the .npz file
 for ds_name, n_iter, n_checkpoints in [
         ("imdb", 50, 10),
         ("cifar10", 30, 15),
