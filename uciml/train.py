@@ -9,29 +9,18 @@ from sklearn.model_selection import train_test_split
 #list_available_datasets()
 
 ds = fetch_ucirepo(name='Heart Disease')
+
 X = torch.tensor(ds.data.features.to_numpy(), dtype=torch.float)
+X = torch.nan_to_num(X) # Handle missing entries by zero imputation
+
 y = torch.tensor(ds.data.targets.to_numpy(), dtype=torch.float)
-
-# access metadata
-print(ds.metadata.additional_info.summary)
-
-# access variable info in tabular format
-print(ds.variables)
-
-# Handle missing entries by zero imputation
-X = torch.nan_to_num(X)
-
-# Turn into binary classification task
-y[y > 0] = 1
+y[y > 0] = 1 # Turn into binary classification task
 
 # Split the data into training, validation, and test sets
 seed = 42
 X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.5, random_state=seed)
 X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=seed)
 
-# TODO rewrite above section to pipeline
-
-# TODO keras, Define the MLP with shortcut connections
 class MLP(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(MLP, self).__init__()
@@ -48,10 +37,11 @@ class MLP(nn.Module):
         return out3 + shortcut
 
 # Define the model, loss function, and optimizer
-input_size = X.shape[1]
-hidden_size = 8  # Example hidden layer size
-output_size = y.shape[1]
-model = MLP(input_size, hidden_size, output_size)
+model = MLP(
+    input_size = X.shape[1],
+    hidden_size = 8,  # Example hidden layer size
+    output_size = y.shape[1]
+)
 criterion = nn.BCEWithLogitsLoss()
 optimizer = optim.Rprop(model.parameters())
 
@@ -64,15 +54,6 @@ for epoch in range(num_epochs):
     loss = criterion(outputs, y_train)
     loss.backward()
     optimizer.step()
-
-    if (epoch + 1) % 10 == 0:
-        model.eval()
-        with torch.no_grad():
-            train_acc = (torch.round(torch.nn.functional.sigmoid(outputs)) == y_train).sum() / outputs.shape[0]
-            val_outputs = model(X_val)
-            val_loss = criterion(val_outputs, y_val)
-            val_acc = (torch.round(torch.nn.functional.sigmoid(val_outputs)) == y_val).sum() / val_outputs.shape[0]
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f} {train_acc.item():.4f}, Val Loss: {val_loss.item():.4f} {val_acc.item():.4f}')
 
 # Evaluate on the test set
 model.eval()
