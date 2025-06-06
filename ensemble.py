@@ -95,7 +95,7 @@ ds_name = "Contraceptive Method Choice"
 ds_npz = np.load(f"{ds_name}_predictions.npz")
 ds = dict([(key, ds_npz[key]) for key in ds_npz.keys()])
 n_iter, n_checkpoints, n_examples, n_cats = ds["predictions_validation"].shape
-X = np.arange(2, n_checkpoints, step=1)
+X = np.arange(2, max(70, n_checkpoints), step=2)
 
 rho_acc = np.zeros((n_iter, len(X)))
 uni_acc = np.zeros((n_iter, len(X)))
