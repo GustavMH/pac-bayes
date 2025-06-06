@@ -88,25 +88,24 @@ def main(args):
             self.every_n_epochs = every_n_epochs
             self.name = name
             self.folder = folder
+            Path(folder).mkdir(exist_ok=True)
 
         def on_validation_epoch_end(self, trainer, pl_module):
             epoch = trainer.current_epoch
-            if (epoch + 1) % self.every_n_epochs == 0:
-                folder = Path(self.folder)
-                folder.mkdir(exist_ok=True)
+            folder = Path(self.folder)
 
-                model = pl_module.model
+            model = pl_module.model
 
-                device = pl_module.device
-                val_loader, test_loader = trainer.val_dataloaders
+            device = pl_module.device
+            val_loader, test_loader = trainer.val_dataloaders
 
-                test_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in test_loader])
-                with open(self.folder / f"{self.name}_{epoch:02d}_test_predictions.pkl", "wb") as f:
-                    pickle.dump(test_pred, f)
+            test_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in test_loader])
+            with open(self.folder / f"{self.name}_{epoch:02d}_test_predictions.pkl", "wb") as f:
+                pickle.dump(test_pred, f)
 
-                val_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in val_loader])
-                with open(self.folder / f"{self.name}_{epoch:02d}_val_predictions.pkl", "wb") as f:
-                    pickle.dump(val_pred, f)
+            val_pred = np.concatenate([model(X.to(device)).detach().cpu() for X, _ in val_loader])
+            with open(self.folder / f"{self.name}_{epoch:02d}_val_predictions.pkl", "wb") as f:
+                pickle.dump(val_pred, f)
 
     train_set, val_set, test_set, num_classes = load_dataset(args.dataset)
 
