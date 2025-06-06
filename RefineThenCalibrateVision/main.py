@@ -130,7 +130,6 @@ def main(args):
             wandb_logger.experiment.config[arg] = getattr(args, arg)
 
         checkpointing = CheckpointEval(
-            every_n_epochs = 20,
             folder = Path(args.folder),
             name = f"{args.dataset}_{args.model}_run_{seed}"
         )
