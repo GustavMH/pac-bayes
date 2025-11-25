@@ -7,8 +7,8 @@ from itertools import islice
 from tqdm import tqdm
 from joblib import Parallel, delayed
 
-from MajorityVoteBounds.mvb import data as datasets
-from MajorityVoteBounds.mvb.bounds import optimizeLamb, optimizeCCTND, optimizeTND, optimizeBennett, bennett
+from mvb import data as datasets
+from mvb.bounds import optimizeLamb, optimizeCCTND, optimizeTND, optimizeBennett, bennett
 
 def oob_tandem_risks(
         preds: [np.array],
@@ -204,12 +204,12 @@ def gen_rf_risks(n_estimators = 100, n_iterations = 10):
         return np.array(res)
 
     ds_names = [
-        #"SVMGuide1" , "Phishing", "Mushroom",
-        #"Splice", "w1a", "Cod-RNA", "Adult",
-        #"Protein", "Connect-4", "Shuttle",
-        #"Pendigits", "Letter", "SatImage",
-        #"Sensorless", "USPS", "MNIST",
-        #"Fashion-MNIST"
+        "SVMGuide1" , "Phishing", "Mushroom",
+        "Splice", "w1a", "Cod-RNA", "Adult",
+        "Protein", "Connect-4", "Shuttle",
+        "Pendigits", "Letter", "SatImage",
+        "Sensorless", "USPS", "MNIST",
+        "Fashion-MNIST"
     ]
     f = lambda name: (name, _run_iteration(name))
     res = (f(name) for name in ds_names)
