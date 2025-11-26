@@ -86,19 +86,16 @@ def split_bootstrap(
 ) -> ((np.array, np.array), (np.array, np.array)):
     """Sample points (x,y) in (X,Y) w. replacement, get at least one example per class in Y.
     Return the sample and sample indicies and out-of-bag samples and indicies"""
-    n_classes = n_classes or len(np.unique(Y))
-
-    X_sample = np.empty((n_samples, *X.shape[1:]))
-    Y_sample = np.empty((n_samples, *Y.shape[1:]))
+    n_classes = n_classes if (n_classes is None) else len(np.unique(Y))
+    Y_sample = np.zeros((n_samples, *Y.shape[1:]))
 
     while not len(np.unique(Y_sample)) == n_classes:
-        idx = rng.integers(n_samples, size=n_samples)
-        Y_sample = Y[idx]
+        sample_idx = rng.integers(n_samples, size=n_samples)
+        Y_sample = Y[sample_idx]
 
-    oob_idx = np.delete(np.arange(len(X)), idx)
+    oob_idx = np.delete(np.arange(len(X)), sample_idx)
 
-    return (X[idx], Y_sample, idx), (X[oob_idx], Y[oob_idx], oob_idx)
-
+    return sample_idx, oob_idx
 
 def ensemble_predict_once(
         rng: np.random.RandomState,
@@ -111,11 +108,10 @@ def ensemble_predict_once(
     n_classes = len(np.unique(Y_train))
 
     def pred(estimator):
-        (X_train_, Y_train_, _), (X_oob, Y_oob, idx_oob) = \
-            split_bootstrap(rng, X_train, Y_train, len(X_train), n_classes=n_classes)
-        estimator.fit(X_train, Y_train)
+        sample_idx, oob_idx = split_bootstrap(rng, X_train, Y_train, len(X_train), n_classes)
+        estimator.fit(X[sample_idx], Y[sample_idx])
         Y_pred_test = estimator.predict(X_test)
-        Y_pred_oob = estimator.predict(X_oob)
+        Y_pred_oob = estimator.predict(X[oob_idx])
         return Y_pred_test, Y_pred_oob, idx_oob
 
     Y_pred_test = np.empty((len(estimators), len(X_test)))
