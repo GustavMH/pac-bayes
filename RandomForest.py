@@ -4,12 +4,10 @@ from pathlib import Path
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier as Tree
 from sklearn.utils import check_random_state
-from tqdm import tqdm
 from joblib import Parallel, delayed
 import time
 
 from mvb import data as datasets
-from mvb.bounds import optimizeLamb, optimizeCCTND, optimizeTND, optimizeBennett, bennett
 from util import oob_tandem_risks, oob_gibbs_risks, split_bootstrap
 
 def ensemble_predict_once(
@@ -52,41 +50,6 @@ def ensemble_predict_once(
         "gibbs_test_risks": L_test,
         "n_test": n_test
     }
-
-
-def optimize_rho(bound: str, params: dict = {}):
-    # Prior weights, used to calculate kl(pi||rho)
-    L = params["gibbs_risks"]
-    n1 = params["n1"]
-    L_tnd = params["tandem_risks"]
-    n2 = params["n2"]
-    pi = np.ones(len(L)) / len(L)
-    rho = None
-    extra = {}
-
-    match bound:
-        case "best":
-            rho = np.insert(np.zeros(len(L)-1), np.argmin(L), 1)
-        case "uniform":
-            rho = np.ones(len(L)) / len(L)
-        case "lambda":
-            (bound, rho, lam) = optimizeLamb(L, n1, abc_pi=pi)
-            extra = { "lambda": lam }
-        case "tnd":
-            (bound, rho, lam) = optimizeTND(L_tnd, n2, abc_pi=pi)
-            extra = { "lambda": lam }
-        case "cctnd":
-            (bound, rho, mu, lam, gamma) = optimizeCCTND(L_tnd, L, n1, n2, abc_pi=pi)
-            extra = { "lambda": lam, "mu": mu, "gamma": gamma }
-        case "bennett":
-            (rho, alpha, beta, lam) = optimizeBennett(L_tnd, L, 1, 1, n1, n2, 1, pi)
-            bound = bennett(L_tnd, L, alpha, beta, n1, n2, lam, pi, rho)
-
-            extra = { "alpha": alpha, "beta": beta, "lambda": lam }
-        case _:
-            raise f"Unknown bound type: {bound}"
-
-    return rho, bound, extra
 
 
 def gen_rf_risks(
@@ -135,22 +98,3 @@ def gen_rf_risks(
     f = lambda name: (name, _run_iteration(name))
     res = (f(name) for name in ds_names)
     np.savez_compressed("random_forest.npz", **dict(res))
-
-
-def gen_bounds(f: Path):
-    ds_npz = np.load(f, allow_pickle=True)
-    ds = dict([(key, ds_npz[key]) for key in ds_npz.keys()])
-    bounds = ["lambda", "tnd", "cctnd", "bennett"]
-
-    def eval_bound(bound, dataset):
-        res = [optimize_rho(bound, params) for params in ds[dataset]]
-        bounds = [b for _, b, _ in res]
-        rhos = [r for r, _, _ in res]
-        mv = [(params["gibbs_test_risks"]*rho).sum()
-              for params, rho in zip(ds[dataset], rhos)]
-        return np.mean(bounds), np.mean(mv)
-
-    return np.array([[
-        eval_bound(bound, dataset)
-        for dataset in ds.keys()
-    ] for bound in bounds])
