@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import numpy as np
+from pathlib import Path
+
+from util import arr2d_to_df
 from mvb.bounds import optimizeLamb, lamb, optimizeCCTND, CCTND, optimizeTND, TND, optimizeBennett, bennett
 from mvb import util
 
@@ -64,7 +68,7 @@ def gen_bounds(f: Path):
         for dataset in ds.keys()
     ] for bound in bounds])
 
-    v_bounds = res[:,:,0]
-    mv_risk = res[:,:,1]
+    mv_bounds = arr2d_to_df(res[:,:,0], bounds, ds.keys())
+    mv_risk   = arr2d_to_df(res[:,:,1], bounds, ds.keys())
 
-    return pd.DataFrame({ "dataset": ds.keys(), **dict([(k, v_bounds[i]) for i, k in enumerate(bounds)])})
+    return mv_bounds, mv_risk

@@ -31,6 +31,25 @@ def bennett(L_tnd, L, a, b, n1, n2, lam, pi, rho, delta = 0.05):
         )
     )
 
+def bennett_kl(L_tnd, L, a, b, n1, n2, lam, pi, rho, delta = 0.05):
+    assert_shape(L_tnd, 2)
+    assert_shape(L, 1)
+    assert_shape(pi, 1)
+    assert_shape(rho, 1)
+
+    # risks drawn according to pi
+    Lp = (pi * L).sum()
+    Lp_tnd = np.mean(L_tnd*np.outer(pi,pi))
+    KL = kl(rho, pi)
+
+    return (
+        (lam / (M.exp(lam/2) - 1)) * (
+            KL + M.log(M.exp(Lp)/delta)
+        ) +
+        ((M.exp(lam) - lam - 1) / lam) * (
+            KL + M.log(M.exp(Lp_tnd)/delta)
+        )
+    )
 
 def optimizeBennett(L_tnd, L, a, b, n1, n2, lam, pi, delta = 0.05, eps=10**-9, max_iterations=1000):
     def opt_alpha(L, KL, n1, delta):

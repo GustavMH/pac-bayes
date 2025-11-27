@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
+import pandas as pd
 from itertools import islice
 
 def oob_tandem_risks(
@@ -71,8 +72,11 @@ def split_bootstrap(
         n_samples: int,
         n_classes: None | int
 ) -> ((np.array, np.array), (np.array, np.array)):
-    """Sample points (x,y) in (X,Y) w. replacement, get at least one example per class in Y.
-    Return the sample and sample indicies and out-of-bag samples and indicies"""
+    """
+    Sample points (x,y) in (X,Y) w. replacement, get at least one example per class in Y.
+    Return the sample and sample indicies and out-of-bag samples and indicies
+    """
+
     n_classes = n_classes if (n_classes is None) else len(np.unique(Y))
     Y_sample = np.zeros((n_samples, *Y.shape[1:]))
 
@@ -83,3 +87,25 @@ def split_bootstrap(
     oob_idx = np.delete(np.arange(len(X)), sample_idx)
 
     return sample_idx, oob_idx
+
+
+def arr2d_to_df(
+        arr: np.array,
+        col_names: [str],
+        row_names: [str]
+) -> pd.DataFrame:
+    """
+    Convert a 2d numpy arr into a pandas DataFrame w. row and column names.
+    """
+
+    assert(len(arr.shape) == 2)
+    #assert(len(row_names) == arr.shape[0])
+    #assert(len(col_names) == arr.shape[1])
+
+    return pd.DataFrame({
+        "name": row_names,
+        **dict([
+            (name, arr[i])
+            for i, name in enumerate(col_names)
+        ])
+    })

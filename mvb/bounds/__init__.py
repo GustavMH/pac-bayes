@@ -7,5 +7,5 @@ from .cctnd import CCTND, optimizeCCTND
 from .ccpbb import CCPBB, optimizeCCPBB
 from .ccpbub import CCPBUB, optimizeCCPBUB
 from .ccpbskl import CCPBSkl, optimizeCCPBSkl
-from .bennett import bennett, optimizeBennett
+from .bennett import bennett, optimizeBennett, bennett_kl
 from .sh import SH
