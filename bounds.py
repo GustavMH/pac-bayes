@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-from mvb.bounds import optimizeLamb, optimizeCCTND, optimizeTND, optimizeBennett, bennett
+from mvb.bounds import optimizeLamb, lamb, optimizeCCTND, CCTND, optimizeTND, TND, optimizeBennett, bennett
+from mvb import util
 
 def optimize_rho(bound: str, params: dict = {}):
     # Prior weights, used to calculate kl(pi||rho)
@@ -12,19 +13,28 @@ def optimize_rho(bound: str, params: dict = {}):
     rho = None
     extra = {}
 
+    def tandem_risk(rho):
+        return (L_tnd*np.outer(rho,rho)).sum()
+
+    def gibbs_risk(rho):
+        return (L*rho).sum()
+
     match bound:
         case "best":
             rho = np.insert(np.zeros(len(L)-1), np.argmin(L), 1)
         case "uniform":
             rho = np.ones(len(L)) / len(L)
-        case "lambda":
-            (bound, rho, lam) = optimizeLamb(L, n1, abc_pi=pi)
+        case "lambda": # First order
+            (_, rho, lam) = optimizeLamb(L, n1, abc_pi=pi)
+            bound = lamb(gibbs_risk(rho), n1, util.kl(rho, pi))
             extra = { "lambda": lam }
         case "tnd":
-            (bound, rho, lam) = optimizeTND(L_tnd, n2, abc_pi=pi)
+            (_, rho, lam) = optimizeTND(L_tnd, n2, abc_pi=pi)
+            bound = TND(tandem_risk(rho), n2, util.kl(rho, pi))
             extra = { "lambda": lam }
         case "cctnd":
             (bound, rho, mu, lam, gamma) = optimizeCCTND(L_tnd, L, n1, n2, abc_pi=pi)
+            bound = CCTND(tandem_risk(rho), gibbs_risk(rho), n1, n2, util.kl(rho, pi))
             extra = { "lambda": lam, "mu": mu, "gamma": gamma }
         case "bennett":
             (rho, alpha, beta, lam) = optimizeBennett(L_tnd, L, 1, 1, n1, n2, 1, pi)
@@ -49,7 +59,12 @@ def gen_bounds(f: Path):
               for params, rho in zip(ds[dataset], rhos)]
         return np.mean(bounds), np.mean(mv)
 
-    return np.array([[
+    res = np.array([[
         eval_bound(bound, dataset)
         for dataset in ds.keys()
     ] for bound in bounds])
+
+    v_bounds = res[:,:,0]
+    mv_risk = res[:,:,1]
+
+    return pd.DataFrame({ "dataset": ds.keys(), **dict([(k, v_bounds[i]) for i, k in enumerate(bounds)])})
