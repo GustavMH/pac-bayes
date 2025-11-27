@@ -14,7 +14,7 @@ def bennett(L_tnd, L, a, b, n1, n2, lam, pi, rho, delta = 0.05):
     assert_shape(rho, 1)
 
     Lp = (rho * L).sum()
-    Lp_tnd = np.mean(L_tnd*np.outer(rho,rho))
+    Lp_tnd = np.sum(L_tnd*np.outer(rho,rho))
     KL = kl(rho, pi)
 
     return (lam / (M.exp(lam/2) - 1))*(
