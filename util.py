@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+from itertools import islice
 
 def oob_tandem_risks(
         preds: [np.array],
@@ -75,7 +77,7 @@ def split_bootstrap(
     Y_sample = np.zeros((n_samples, *Y.shape[1:]))
 
     while not len(np.unique(Y_sample)) == n_classes:
-        sample_idx = rng.integers(n_samples, size=n_samples)
+        sample_idx = rng.randint(n_samples, size=n_samples)
         Y_sample = Y[sample_idx]
 
     oob_idx = np.delete(np.arange(len(X)), sample_idx)

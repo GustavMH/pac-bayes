@@ -3,5 +3,6 @@
 *.log
 tmp/
 .old/
+__pycache__/
 
 *.out

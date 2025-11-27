@@ -3,13 +3,14 @@
 from pathlib import Path
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier as Tree
-from itertools import islice
+from sklearn.utils import check_random_state
 from tqdm import tqdm
 from joblib import Parallel, delayed
+import time
 
 from mvb import data as datasets
 from mvb.bounds import optimizeLamb, optimizeCCTND, optimizeTND, optimizeBennett, bennett
-from .util import oob_tandem_risks, gibbs_risks, split_bootstrap
+from util import oob_tandem_risks, oob_gibbs_risks, split_bootstrap
 
 def ensemble_predict_once(
         rng: np.random.RandomState,
@@ -23,10 +24,10 @@ def ensemble_predict_once(
 
     def pred(estimator):
         sample_idx, oob_idx = split_bootstrap(rng, X_train, Y_train, len(X_train), n_classes)
-        estimator.fit(X[sample_idx], Y[sample_idx])
+        estimator.fit(X_train[sample_idx], Y_train[sample_idx])
         Y_pred_test = estimator.predict(X_test)
-        Y_pred_oob = estimator.predict(X[oob_idx])
-        return Y_pred_test, Y_pred_oob, idx_oob
+        Y_pred_oob = estimator.predict(X_train[oob_idx])
+        return Y_pred_test, Y_pred_oob, oob_idx
 
     Y_pred_test = np.empty((len(estimators), len(X_test)))
     Y_pred_oob  = [None] * len(estimators)
@@ -88,42 +89,52 @@ def optimize_rho(bound: str, params: dict = {}):
     return rho, bound, extra
 
 
-def gen_rf_risks(n_estimators = 100, n_iterations = 10):
-    def _run_estimators(dataset: str, seed: int):
+def gen_rf_risks(
+        n_estimators = 100,
+        n_iterations = 10,
+        dataset_path = "/home/gustav/opgaver/ku/oracle-bounds/MajorityVoteBounds/NeurIPS2021/data/"
+):
+    def _run_estimators(X, Y, seed: int):
+        print(f"run w. seed {seed}")
+        start = time.time()
+        rng = check_random_state(seed+1000)
+
         estimators = [
             Tree(
                 criterion="gini",
                 min_samples_split=2,
                 min_samples_leaf=1,
-                random_state=i+seed,
+                random_state=rng,
                 max_features="sqrt"
             ) for i in range(n_estimators)
         ]
 
-        rng = np.random.default_rng(1000+seed)
-        X,Y = datasets.load(dataset, path="./MajorityVoteBounds/NeurIPS2021/data/")
-        ds = datasets.split(X, Y, 0.8, random_state=100+seed)
-
-        return ensemble_predict_once(rng, estimators, *ds)
+        ds = datasets.split(X, Y, 0.8, random_state=rng)
+        res = ensemble_predict_once(rng, estimators, *ds)
+        print(f"_run_estimator took {time.time() - start}")
+        return res
 
     def _run_iteration(dataset: str):
-        f = lambda i: _run_estimators(dataset, i)
-        res = Parallel(-1)(delayed(f)(i) for i in range(n_iterations))
+        print(dataset)
+        X, Y = datasets.load(dataset, path=dataset_path)
+
+        f = lambda i: _run_estimators(X, Y, i)
+        res = Parallel(-1, backend="loky")(delayed(f)(i) for i in range(n_iterations))
         return np.array(res)
 
+    # The Protein dataset has been removed from the datasets
+    # where random forests are using in the original code
     ds_names = [
-        "SVMGuide1" , "Phishing", "Mushroom",
+        "SVMGuide1", "Phishing", "Mushroom",
         "Splice", "w1a", "Cod-RNA", "Adult",
-        "Protein", "Connect-4", "Shuttle",
+        "Connect-4", "Shuttle",
         "Pendigits", "Letter", "SatImage",
         "Sensorless", "USPS", "MNIST",
         "Fashion-MNIST"
     ]
     f = lambda name: (name, _run_iteration(name))
     res = (f(name) for name in ds_names)
-    res = dict(res)
-    old = np.load("random_forest.npz", allow_pickle=True)
-    np.savez_compressed("random_forest.npz", **old, **res)
+    np.savez_compressed("random_forest.npz", **dict(res))
 
 
 def gen_bounds(f: Path):
