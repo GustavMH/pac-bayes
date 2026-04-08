@@ -59,6 +59,11 @@ def gen_bounds(f: Path):
         res = [optimize_rho(bound, params) for params in ds[dataset]]
         bounds = [b for _, b, _ in res]
         rhos = [r for r, _, _ in res]
+        # TODO is this not correct,
+        # no reduction in error is present when
+        # errors aren't concentrated on one class
+        #
+        # Should be (params["test_predictions"] == params["test_labels"])
         mv = [(params["gibbs_test_risks"]*rho).sum()
               for params, rho in zip(ds[dataset], rhos)]
         return np.mean(bounds), np.mean(mv)
