@@ -7,7 +7,7 @@ from sklearn.utils import check_random_state
 from joblib import Parallel, delayed
 import time
 
-from mvb import data as datasets
+import data as datasets
 from util import oob_tandem_risks, oob_gibbs_risks, split_bootstrap
 
 def ensemble_predict_once(
@@ -36,19 +36,14 @@ def ensemble_predict_once(
 
     L, n1 = oob_gibbs_risks(Y_pred_oob, Y_pred_idx, Y_train)
     L_tnd, n2 = oob_tandem_risks(Y_pred_oob, Y_pred_idx, Y_train)
-    L_test, n_test = oob_gibbs_risks(
-        Y_pred_test,
-        [np.arange(len(Y_test))] * len(estimators),
-        Y_test
-    )
 
     return {
         "gibbs_risks": L,
         "n1": n1,
         "tandem_risks": L_tnd,
         "n2": n2,
-        "gibbs_test_risks": L_test,
-        "n_test": n_test
+        "test_predictions": Y_pred_test,
+        "test_labels": Y_test
     }
 
 

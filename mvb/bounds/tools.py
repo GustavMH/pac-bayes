@@ -122,9 +122,9 @@ def solve_kl_inf(q, right_hand_side):
 def Lambert(c, branch):
     """
     Implement the Lambert W function, i.e., the solution of xe^x=c, by Newton's method.
-    Requirement : c\geq -1/e
-    branch W0 : the solution x\geq -1
-    branch W-1 : the solution x\leq -1
+    Requirement : c >= -1/e
+    branch W0 : the solution x >= -1
+    branch W-1 : the solution x >= -1
     """
     eps = 1e-9
     

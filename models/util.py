@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import numpy as np
-import pandas as pd
 from itertools import islice
 
 def oob_tandem_risks(
@@ -89,23 +88,3 @@ def split_bootstrap(
     return sample_idx, oob_idx
 
 
-def arr2d_to_df(
-        arr: np.array,
-        col_names: [str],
-        row_names: [str]
-) -> pd.DataFrame:
-    """
-    Convert a 2d numpy arr into a pandas DataFrame w. row and column names.
-    """
-
-    assert(len(arr.shape) == 2)
-    #assert(len(row_names) == arr.shape[0])
-    #assert(len(col_names) == arr.shape[1])
-
-    return pd.DataFrame({
-        "name": row_names,
-        **dict([
-            (name, arr[i])
-            for i, name in enumerate(col_names)
-        ])
-    })

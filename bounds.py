@@ -1,11 +1,32 @@
 #!/usr/bin/env python3
 
 import numpy as np
+import pandas as pd
 from pathlib import Path
 
-from util import arr2d_to_df
 from mvb.bounds import optimizeLamb, lamb, optimizeCCTND, CCTND, optimizeTND, TND, optimizeBennett, bennett
 from mvb import util
+
+def arr2d_to_df(
+        arr: np.array,
+        col_names: [str],
+        row_names: [str]
+) -> pd.DataFrame:
+    """
+    Convert a 2d numpy arr into a pandas DataFrame w. row and column names.
+    """
+
+    assert(len(arr.shape) == 2)
+    #assert(len(row_names) == arr.shape[0])
+    #assert(len(col_names) == arr.shape[1])
+
+    return pd.DataFrame({
+        "name": row_names,
+        **dict([
+            (name, arr[i])
+            for i, name in enumerate(col_names)
+        ])
+    })
 
 def optimize_rho(bound: str, params: dict = {}):
     # Prior weights, used to calculate kl(pi||rho)
@@ -59,12 +80,7 @@ def gen_bounds(f: Path):
         res = [optimize_rho(bound, params) for params in ds[dataset]]
         bounds = [b for _, b, _ in res]
         rhos = [r for r, _, _ in res]
-        # TODO is this not correct,
-        # no reduction in error is present when
-        # errors aren't concentrated on one class
-        #
-        # Should be (params["test_predictions"] == params["test_labels"])
-        mv = [(params["gibbs_test_risks"]*rho).sum()
+        mv = [((params["test_predictions"] == params["test_labels"])*rho[:,None]).mean()
               for params, rho in zip(ds[dataset], rhos)]
         return np.mean(bounds), np.mean(mv)
 
