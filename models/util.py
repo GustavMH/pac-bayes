@@ -2,6 +2,13 @@
 import numpy as np
 from itertools import islice
 
+def tandem_risks(preds: [np.array], targs: np.array):
+    """Call `oob_tandem_risks` with pred_idx=np.arange(len(targs))"""
+    pred_idx = np.ones_like(preds) * np.arange(len(targs))
+    return oob_tandem_risks(preds, pred_idx, targs)
+
+
+
 def oob_tandem_risks(
         preds: [np.array],
         pred_idx: [np.array],
@@ -42,7 +49,18 @@ def oob_tandem_risks(
 
 
 
-def oob_gibbs_risks(preds, pred_idx, targs):
+def gibbs_risks(preds: [np.array], targs: np.array):
+    """Call `oob_gibbs_risks` with pred_idx=np.arange(len(targs))"""
+    pred_idx = np.ones_like(preds) * np.arange(len(targs))
+    return oob_gibbs_risks(preds, pred_idx, targs)
+
+
+
+def oob_gibbs_risks(
+        preds: [np.array],
+        pred_idx: [np.array],
+        targs: np.array
+):
     """
     Calculate a (model) size array of risk scores.
 
@@ -73,7 +91,7 @@ def split_bootstrap(
 ) -> ((np.array, np.array), (np.array, np.array)):
     """
     Sample points (x,y) in (X,Y) w. replacement, get at least one example per class in Y.
-    Return the sample and sample indicies and out-of-bag samples and indicies
+    Return the sample indicies and out-of-bag indicies
     """
 
     n_classes = n_classes if (n_classes is None) else len(np.unique(Y))

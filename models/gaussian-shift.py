@@ -3,6 +3,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from models.util import tandem_risks, gibbs_risks, split_bootstrap
+from bounds import optimize_rho
+
 # fit a linear plane, by labelling points in a with -1, b with +1, the seperator
 # plane is when the regression gives 0.
 
@@ -26,28 +29,50 @@ def fit_ensemble(a,b,n_members,rng):
     # An ensemble is a matrix of b1, cx1, cy1, c...
     return np.array(planes)
 
-def ensemble_to_npz(ens):
+def test_ensemble(ens, a, b):
+    n_a, n_b = a.shape[0], b.shape[0]
+    y = (np.block([-np.ones(n_a), np.ones(n_b)]) > 0)
+    X = np.block([[np.ones((n_a,1)),a],
+                  [np.ones((n_b,1)),b]])
+    y_pred = (X @ ens.T).T > 0
+
+    L, n1 = gibbs_risks(y_pred, y)
+    L_tnd, n2 = tandem_risks(y_pred, y)
+
     return {
-        "gibbs_risks": None,
-        "n1": None,
-        "tandem_risks": None,
-        "n2": None
+        "gibbs_risks": L,
+        "n1": n1,
+        "tandem_risks": L_tnd,
+        "n2": n2,
+        "test_predictions": y_pred,
+        "test_labels": y
     }
 
-a = rng.multivariate_normal([ 1,*[0]*99], np.eye(100), size=60)
-b = rng.multivariate_normal([-1,*[0]*99], np.eye(100), size=60)
+def gen_pair_normals(rng, n_draws=100, n_dims=100, shift_rads=0):
+    shift_radians = 0.1
+    # cos sin some bullshit
+    a = rng.multivariate_normal([ 1,*[0]*(n_dims-1)], np.eye(n_dims), size=n_draws)
+    b = rng.multivariate_normal([-1,*[0]*(n_dims-1)], np.eye(n_dims), size=n_draws)
+    return a, b
 
-print(fit_ensemble(a,b,10,rng).shape)
 
-def optimize_ensemble(ens, val_set):
-    # optimize weighting
-    pass
+
+rng = np.random.default_rng()
+a, b = gen_pair_normals(rng, 100, 10)
+
+# train on a/b, ensemble in a_val/b_val, ensemble on a_shift/b_shift
+a_val, b_val = gen_pair_normals(rng, 150, 10)
+a_sft, b_sft = gen_pair_normals(rng, 150, shift_rads=0.1)
+
+ens = fit_ensemble(a, b, 10, rng)
+p1 = test_ensemble(ens, a, b)
+p2 = test_ensemble(ens, a_val, b_val)
+print(optimize_rho("tnd", p2)[1], p2["gibbs_risks"].round(2))
 
 def plot_example_seperator(path="normal_shift.png"):
     rng = np.random.default_rng()
 
-    a = rng.multivariate_normal([ 1,*[0]*99], np.eye(100), size=60)
-    b = rng.multivariate_normal([-1,*[0]*99], np.eye(100), size=60)
+    a, b = gen_pair_normals(rng, 80)
 
     plt.rcParams.update({
         "text.usetex": True,

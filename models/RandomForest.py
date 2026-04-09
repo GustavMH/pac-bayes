@@ -7,8 +7,8 @@ from sklearn.utils import check_random_state
 from joblib import Parallel, delayed
 import time
 
-import data as datasets
-from util import oob_tandem_risks, oob_gibbs_risks, split_bootstrap
+import models.data as datasets
+from models.util import oob_tandem_risks, oob_gibbs_risks, split_bootstrap
 
 def ensemble_predict_once(
         rng: np.random.RandomState,
