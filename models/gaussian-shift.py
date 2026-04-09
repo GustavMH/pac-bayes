@@ -49,27 +49,25 @@ def test_ensemble(ens, a, b):
     }
 
 def gen_pair_normals(rng, n_draws=100, n_dims=100, shift_rads=0):
-    shift_radians = 0.1
-    # cos sin some bullshit
-    a = rng.multivariate_normal([ 1,*[0]*(n_dims-1)], np.eye(n_dims), size=n_draws)
-    b = rng.multivariate_normal([-1,*[0]*(n_dims-1)], np.eye(n_dims), size=n_draws)
+    x, y = np.cos(shift_rads), np.sin(shift_rads)
+    print(x,y)
+    a = rng.multivariate_normal([+x,+y,*[0]*(n_dims-2)], np.eye(n_dims), size=n_draws)
+    b = rng.multivariate_normal([-x,-y,*[0]*(n_dims-2)], np.eye(n_dims), size=n_draws)
     return a, b
 
+# rng = np.random.default_rng()
+# a, b = gen_pair_normals(rng, 100, 10)
 
+# # train on a/b, ensemble in a_val/b_val, ensemble on a_shift/b_shift
+# a_val, b_val = gen_pair_normals(rng, 150, 10)
+# a_sft, b_sft = gen_pair_normals(rng, 150, shift_rads=0.1)
 
-rng = np.random.default_rng()
-a, b = gen_pair_normals(rng, 100, 10)
+# ens = fit_ensemble(a, b, 10, rng)
+# p1 = test_ensemble(ens, a, b)
+# p2 = test_ensemble(ens, a_val, b_val)
+# print(optimize_rho("tnd", p2)[1], p2["gibbs_risks"].round(2))
 
-# train on a/b, ensemble in a_val/b_val, ensemble on a_shift/b_shift
-a_val, b_val = gen_pair_normals(rng, 150, 10)
-a_sft, b_sft = gen_pair_normals(rng, 150, shift_rads=0.1)
-
-ens = fit_ensemble(a, b, 10, rng)
-p1 = test_ensemble(ens, a, b)
-p2 = test_ensemble(ens, a_val, b_val)
-print(optimize_rho("tnd", p2)[1], p2["gibbs_risks"].round(2))
-
-def plot_example_seperator(path="normal_shift.png"):
+def plot_example_seperator(path="fig/normal_shift.pdf"):
     rng = np.random.default_rng()
 
     a, b = gen_pair_normals(rng, 80)
@@ -79,7 +77,7 @@ def plot_example_seperator(path="normal_shift.png"):
         "font.family": "serif"
     })
 
-    fig, axs = plt.subplots(1,2,figsize=(6,3.5))
+    fig, axs = plt.subplots(1,2,figsize=(5.1,2.5),layout="tight")
 
     axs[0].scatter(*a.T[:2], alpha=0.9, color="black", marker="x", s=50)
     axs[0].scatter(*b.T[:2], alpha=0.9, color="black", marker="s", s=50)
@@ -96,8 +94,66 @@ def plot_example_seperator(path="normal_shift.png"):
 
     axs[0].set_ylim([-3,3])
     axs[0].set_xlim([-3,3])
+    axs[0].set_xlabel("Axis 1")
+    axs[0].set_ylabel("Axis 2")
+    axs[1].set_xlabel("Axis 3")
+    axs[1].set_ylabel("Axis 4")
     axs[1].set_ylim([-3,3])
     axs[1].set_xlim([-3,3])
-    #plt.legend()
+    # TODO maybe it isn't worth it to have a colorbar
+    #sm = plt.cm.ScalarMappable(cmap="plasma", norm=plt.Normalize(0,1))
+    #fig.colorbar(sm, ax=axs[1])
     plt.savefig(path)
     plt.close()
+
+
+def plot_optimal_hull(path="fig/optimal_hull.pdf"):
+    rng = np.random.default_rng()
+
+    a, b = gen_pair_normals(rng, 100)
+    # # train on a/b, ensemble in a_val/b_val, ensemble on a_shift/b_shift
+    a_val, b_val = gen_pair_normals(rng, 250, shift_rads=.7)
+    a_tst, b_tst = gen_pair_normals(rng, 250, shift_rads=.7)
+
+    ens = fit_ensemble(a, b, 10, rng)
+    p1 = test_ensemble(ens, a, b)
+    rho1, bound, _ = optimize_rho("lambda", p1)
+    p2 = test_ensemble(ens, a_val, b_val)
+    rho2, bound, _ = optimize_rho("lambda", p2)
+
+    plt.rcParams.update({
+        "text.usetex": True,
+        "font.family": "serif"
+    })
+
+    fig, axs = plt.subplots(1,2,figsize=(5.1,2.5),layout="tight")
+
+    axs[0].plot(*a.T[:2], "x", color="black")
+    axs[0].plot(*b.T[:2], "s", ms=5, color="black")
+    axs[1].plot(*a_tst.T[:2], "x", color="black")
+    axs[1].plot(*b_tst.T[:2], "s", ms=5, color="black")
+
+    l = np.zeros(200)
+    r = np.zeros(200)
+
+    for bias, cx, cy, *_ in ens:
+        line = lambda y: (-bias-cy*y)/cx
+        l = np.minimum(l, line(np.linspace(-3,3,200)))
+        r = np.maximum(r, line(np.linspace(-3,3,200)))
+        axs[0].plot([line(-3),line(3)], [-3,3], color="tab:red")
+
+    bias, cx, cy, *_ = rho1 @ ens
+    axs[1].plot([line(-3),line(3)], [-3,3], color="tab:red")
+    bias, cx, cy, *_ = rho2 @ ens
+    axs[1].plot([line(-3),line(3)], [-3,3], color="tab:blue")
+    axs[1].fill_betweenx(np.linspace(-3,3,200), r, l, color="grey", alpha=0.4)
+
+    axs[0].set_ylim([-3,3])
+    axs[0].set_xlim([-3,3])
+    axs[1].set_ylim([-3,3])
+    axs[1].set_xlim([-3,3])
+
+    plt.savefig(path)
+    plt.close()
+
+plot_optimal_hull()
