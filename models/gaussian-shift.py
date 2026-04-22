@@ -50,22 +50,9 @@ def test_ensemble(ens, a, b):
 
 def gen_pair_normals(rng, n_draws=100, n_dims=100, shift_rads=0):
     x, y = np.cos(shift_rads), np.sin(shift_rads)
-    print(x,y)
     a = rng.multivariate_normal([+x,+y,*[0]*(n_dims-2)], np.eye(n_dims), size=n_draws)
     b = rng.multivariate_normal([-x,-y,*[0]*(n_dims-2)], np.eye(n_dims), size=n_draws)
     return a, b
-
-# rng = np.random.default_rng()
-# a, b = gen_pair_normals(rng, 100, 10)
-
-# # train on a/b, ensemble in a_val/b_val, ensemble on a_shift/b_shift
-# a_val, b_val = gen_pair_normals(rng, 150, 10)
-# a_sft, b_sft = gen_pair_normals(rng, 150, shift_rads=0.1)
-
-# ens = fit_ensemble(a, b, 10, rng)
-# p1 = test_ensemble(ens, a, b)
-# p2 = test_ensemble(ens, a_val, b_val)
-# print(optimize_rho("tnd", p2)[1], p2["gibbs_risks"].round(2))
 
 def plot_example_seperator(path="fig/normal_shift.pdf"):
     rng = np.random.default_rng()
@@ -107,19 +94,13 @@ def plot_example_seperator(path="fig/normal_shift.pdf"):
     plt.close()
 
 
-def plot_optimal_hull(path="fig/optimal_hull.pdf"):
+def plot_optimal_hull(path="fig/optimal_hull.png"):
     rng = np.random.default_rng()
 
     a, b = gen_pair_normals(rng, 100)
-    # # train on a/b, ensemble in a_val/b_val, ensemble on a_shift/b_shift
-    a_val, b_val = gen_pair_normals(rng, 250, shift_rads=.7)
-    a_tst, b_tst = gen_pair_normals(rng, 250, shift_rads=.7)
-
     ens = fit_ensemble(a, b, 10, rng)
-    p1 = test_ensemble(ens, a, b)
-    rho1, bound, _ = optimize_rho("lambda", p1)
-    p2 = test_ensemble(ens, a_val, b_val)
-    rho2, bound, _ = optimize_rho("lambda", p2)
+
+    # # train on a/b, ensemble in a_val/b_val, ensemble on a_shift/b_shift
 
     plt.rcParams.update({
         "text.usetex": True,
@@ -128,6 +109,10 @@ def plot_optimal_hull(path="fig/optimal_hull.pdf"):
 
     fig, axs = plt.subplots(1,2,figsize=(5.1,2.5),layout="tight")
 
+    p1 = test_ensemble(ens, a, b)
+    rho1, bound, _ = optimize_rho("lambda", p1)
+
+    a_tst, b_tst = gen_pair_normals(rng, 250, shift_rads=.7)
     axs[0].plot(*a.T[:2], "x", color="black")
     axs[0].plot(*b.T[:2], "s", ms=5, color="black")
     axs[1].plot(*a_tst.T[:2], "x", color="black")
@@ -142,10 +127,24 @@ def plot_optimal_hull(path="fig/optimal_hull.pdf"):
         r = np.maximum(r, line(np.linspace(-3,3,200)))
         axs[0].plot([line(-3),line(3)], [-3,3], color="tab:red")
 
-    bias, cx, cy, *_ = rho1 @ ens
-    axs[1].plot([line(-3),line(3)], [-3,3], color="tab:red")
-    bias, cx, cy, *_ = rho2 @ ens
-    axs[1].plot([line(-3),line(3)], [-3,3], color="tab:blue")
+    for _ in range(30):
+        a_val, b_val = gen_pair_normals(rng, 250, shift_rads=.7)
+        p2 = test_ensemble(ens, a_val, b_val)
+        rho2, bound, _ = optimize_rho("lambda", p2)
+
+        bias, cx, cy, *_ = rho2 @ ens
+        line = lambda y: (-bias-cy*y)/cx
+        axs[1].plot([line(-3),line(3)], [-3,3], color="tab:blue", alpha=0.5)
+
+    for _ in range(30):
+        a_val, b_val = gen_pair_normals(rng, 250)
+        p2 = test_ensemble(ens, a_val, b_val)
+        rho2, bound, _ = optimize_rho("lambda", p2)
+
+        bias, cx, cy, *_ = rho2 @ ens
+        line = lambda y: (-bias-cy*y)/cx
+        axs[1].plot([line(-3),line(3)], [-3,3], color="tab:red", alpha=0.5)
+
     axs[1].fill_betweenx(np.linspace(-3,3,200), r, l, color="grey", alpha=0.4)
 
     axs[0].set_ylim([-3,3])
@@ -156,4 +155,35 @@ def plot_optimal_hull(path="fig/optimal_hull.pdf"):
     plt.savefig(path)
     plt.close()
 
-plot_optimal_hull()
+
+import matplotlib as mpl
+
+rng = np.random.default_rng()
+a, b = gen_pair_normals(rng, 100, 200)
+
+# # train on a/b, ensemble in a_val/b_val, ensemble on a_shift/b_shift
+# a_val, b_val = gen_pair_normals(rng, 150, 10)
+# a_sft, b_sft = gen_pair_normals(rng, 150, shift_rads=0.1)
+
+# ens = fit_ensemble(a, b, 10, rng)
+# p1 = test_ensemble(ens, a, b)
+# p2 = test_ensemble(ens, a_val, b_val)
+# print(optimize_rho("tnd", p2)[1], p2["gibbs_risks"].round(2))
+
+fig, ax = plt.subplots(1,1,figsize=(5.1,3.2),layout="tight")
+
+cmap = mpl.cm.get_cmap("cividis")
+
+t1 = ax.plot(*a[:, :2].T, marker = ".", linestyle = "none", label = "$\\mathcal{N}([+1, 0, \\dots, 0], I)$")
+t2 = ax.plot(*b[:, :2].T, marker = ".", linestyle = "none", label = "$\\mathcal{N}([-1, 0, \\dots, 0], I)$")
+for i in range(4,200,10):
+    bias, cx, cy, *_ = fit_plane(a[:,:i],b[:,:i])
+    line = lambda y: (-bias-cy*y)/cx
+    ax.plot([line(-3),line(3)], [-3,3], label = f"{i} dim.", c=cmap(i/200))
+t3 = ax.plot([0,0], [-3,3], label = "Optimal", c = "black", ls = "dotted")
+ax.set_ylim([-3,3])
+ax.set_xlim([-3,3])
+fig.colorbar(plt.cm.ScalarMappable(norm=mpl.colors.Normalize(vmin=4, vmax=200), cmap=cmap), ax=ax)
+ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=False, shadow=False, ncol=3, handles=t1+t2+t3)
+plt.savefig("fig/example_hyperplane.pdf")
+plt.close()
