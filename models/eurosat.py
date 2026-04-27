@@ -12,17 +12,14 @@ from tqdm import tqdm
 
 import numpy as np
 
-device = (
-    torch.accelerator.current_accelerator().type
-    if torch.accelerator.is_available()
-    else "cpu"
-)
-if device == "cpu":
-    print("Allocated a cpu >:(", flush=True)
-    exit(3)
-else:
-    print(f"Using {device}", flush=True)
-
+def gpu_or_quit() -> str:
+    if torch.accelerator.is_available():
+        device = torch.accelerator.current_accelerator().type
+        print(f"Using {device}", flush=True)
+        return device
+    else:
+        print("No GPU allocated >:(", flush=True)
+        exit(3)
 
 def split_by_chroma(ds):
     from itertools import groupby
@@ -43,19 +40,25 @@ def split_by_chroma(ds):
 
 
 def mix_subsets(A, B, ratio, n=None):
-    # Switch to drawing N, with a specific ratio
-    d = torch.utils.data
-    n = n if n else min(len(A), len(B))
-    subset_A, _ = d.random_split(A, [ratio, 1 - ratio])
-    _, subset_B = d.random_split(B, [ratio, 1 - ratio])
-    return d.ConcatDataset([subset_A, subset_B])
+    match ratio:
+        case 0:
+            return B
+        case 1:
+            return A
+        case _:
+            # Switch to drawing N, with a specific ratio
+            d = torch.utils.data
+            n = n if n else min(len(A), len(B))
+            subset_A, _ = d.random_split(A, [ratio, 1 - ratio])
+            _, subset_B = d.random_split(B, [ratio, 1 - ratio])
+            return d.ConcatDataset([subset_A, subset_B])
 
 
 def MLP():
     return nn.Sequential(
-        nn.Conv2d(3, 64, (3, 3)),
+        nn.Conv2d(3, 64, (3, 3), 2),
         nn.LeakyReLU(),
-        nn.Conv2d(64, 128, (3, 3)),
+        nn.Conv2d(64, 128, (3, 3), 2),
         nn.Flatten(),
         nn.LeakyReLU(),
         nn.LazyLinear(128),
@@ -73,7 +76,7 @@ def train(model, dataset, loss_fn, optimizer, n_epochs, callbacks=[]):
 
     for epoch_n in tqdm(range(n_epochs)):
         for batch_n, (X, y) in enumerate(dataset):
-            X, y = X.to(device), y.to(device)
+            X, y = X.to(device, non_blocking=True), y.to(device, non_blocking=True)
 
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 pred = model(X)
@@ -116,28 +119,33 @@ def snapshot_callback(dataset, dest, per_n_epochs):
 
     return save
 
-def train_mix(ratio, A, B):
+def train_mix(ratio, A, B, n_epochs=150):
     A_train, A_val, A_test = A
     B_train, B_val, B_test = B
 
     mlp = MLP().to(device)
     print(A_val[0][0].shape)
     mlp(A_val[0][0].unsqueeze(0).to(device))
-    print(sum(p.numel() for p in mlp.parameters() if p.requires_grad))
+    print(
+        "Training a "
+        f"{sum(p.numel() for p in mlp.parameters() if p.requires_grad):_}"
+        f" parameter model, for {n_epochs} epochs"
+    )
+
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(mlp.parameters(), lr=1e-4)
 
     mix = mix_subsets(A_train, B_train, ratio)
-    loader = DataLoader(mix, batch_size=64, shuffle=True)
+    loader = DataLoader(mix, batch_size=64, shuffle=True, pin_memory=True, num_workers=4)
 
-    dest_test = torch.zeros((2, 15, len(A_test), 10))
-    dest_val = torch.zeros((2, 15, len(A_val), 10))
+    dest_test = torch.zeros((2, n_epochs // 10, len(A_test), 10))
+    dest_val = torch.zeros((2, n_epochs // 10, len(A_val), 10))
     train(
         mlp,
         loader,
         loss_fn,
         optimizer,
-        150,
+        n_epochs,
         callbacks=[
             snapshot_callback(A_test, dest_test[0], 10),
             snapshot_callback(B_test, dest_test[1], 10),
@@ -147,10 +155,9 @@ def train_mix(ratio, A, B):
     )
     return {"test": dest_test, "val": dest_val}
 
-torch.cuda.memory._record_memory_history(max_entries=100000)
-
 torch.cuda.empty_cache()
 
+device = gpu_or_quit()
 ds = ImageFolder(
     "data/EuroSAT",
     transform=ToTensor(),
@@ -162,9 +169,9 @@ ds_A, ds_B = split_by_chroma(ds)
 A = torch.utils.data.random_split(ds_A, [0.7, 0.1, 0.2])
 B = torch.utils.data.random_split(ds_B, [0.7, 0.1, 0.2])
 
-res = [train_mix(ratio, A, B) for ratio in [0.0, 0.25, 0.5, 0.75, 1]]
-res_val = np.array([X["val"] for X in res])
-res_test = np.array([X["test"] for X in res])
+res = [[train_mix(ratio, A, B) for ratio in [0.0, 0.25, 0.5, 0.75, 1]] for _ in range(10)]
+res_val = np.array([[X["val"] for X in run] for run in res])
+res_test = np.array([[X["test"] for X in run] for run in res])
 np.savez_compressed(
     "models/eurosat_chroma_shift.npz", validation=res_val, test=res_test
 )
