@@ -157,7 +157,7 @@ ds = ImageFolder(
 ds_labels = torch.vstack([y for _, y in tqdm(ds)]).to(device)
 ds_imgs = torch.cat([X.unsqueeze(0) for X, _ in tqdm(ds)]).to(device)
 ds = (ds_imgs, ds_labels)
-ds_num = torch.argmax(ds_labels, 1)
+ds_num = torch.argmax(ds_labels, 1).to(device)
 
 idx_A, idx_B = split_by_chroma(ds)
 
@@ -165,7 +165,6 @@ A_train, A_val, A_test = split_idx(idx_A, [0.7, 0.1, 0.2])
 B_train, B_val, B_test = split_idx(idx_B, [0.7, 0.1, 0.2])
 
 idx_mix = [[mix_idxs(A_train, B_train, ratio) for ratio in [0.0, 0.25, 0.5, 0.75, 1]] for _ in range(10)]
-idx_mix = [[mix_idxs(A_train, B_train, ratio) for ratio in [0.25, 0.5]] for _ in range(1)]
 
 eval_sets = (ds_subset(ds, A_val), ds_subset(ds, A_test), ds_subset(ds, B_val), ds_subset(ds, B_test))
 
@@ -176,6 +175,7 @@ res_test = np.array([[X["test"] for X in run] for run in res])
 try:
     # This should be different for the two val sets
     print((np.argmax(res_val, -1) == np.array(torch.index_select(ds_num, 0, A_val.to(device)).cpu())).mean(-1).round(1))
+    print((np.argmax(res_val, -1) == np.array(torch.index_select(ds_num, 0, B_val.to(device)).cpu())).mean(-1).round(1))
 except:
     print("Woops!")
 
@@ -185,14 +185,14 @@ np.savez_compressed(
     test=res_test,
     val_labels=np.array(
         [
-            torch.index_select(ds_num, 0, A_val.to(device)),
-            torch.index_select(ds_num, 0, B_val.to(device)),
+            torch.index_select(ds_num, 0, A_val.to(device)).cpu(),
+            torch.index_select(ds_num, 0, B_val.to(device)).cpu(),
         ]
     ),
     test_labels=np.array(
         [
-            torch.index_select(ds_num, 0, A_test.to(device)),
-            torch.index_select(ds_num, 0, B_test.to(device)),
+            torch.index_select(ds_num, 0, A_test.to(device)).cpu(),
+            torch.index_select(ds_num, 0, B_test.to(device)).cpu(),
         ]
     ),
 )
