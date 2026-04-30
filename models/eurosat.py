@@ -35,7 +35,9 @@ def split_by_chroma(ds):
     idx_A = torch.cat([torch.IntTensor(i[:len(i)//2]) for i in idxs])
     idx_B = torch.cat([torch.IntTensor(i[len(i)//2:]) for i in idxs])
 
-    return idx_A, idx_B
+    n = min(len(idx_A), len(idx_B))
+
+    return idx_A[:n], idx_B[:n]
 
 def mix_idxs(idx_A, idx_B, ratio, n=None):
     # Switch to drawing N, with a specific ratio
@@ -60,20 +62,26 @@ def train(model, dataset, loss_fn, optimizer, n_epochs, callbacks=[]):
     scaler = GradScaler()
 
     for epoch_n in tqdm(range(n_epochs)):
-        for batch_n, (X, y) in enumerate(dataset):
-
+        running_loss = 0
+        for batch_n, (X, y) in enumerate(ds_loader(dataset)):
+            optimizer.zero_grad()
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 pred = model(X)
                 loss = loss_fn(pred, y)
+
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
 
-            optimizer.zero_grad()
-
         for callback in callbacks:
             callback(model, epoch_n)
+
+        print(f"Epoch {epoch_n}, Loss: {running_loss}")
 
     return model
 
@@ -91,9 +99,17 @@ def snapshot_callback(ds, dest, per_n_epochs, batch_size=64):
 
     return save
 
+def model_check():
 
-def train_resnet18(ds, eval_sets, n_epochs=150):
+    def _(model, epoch_n):
+        for name, param in model.named_parameters():
+            if "weight" in name:
+                print(epoch_n, param[0,0])
 
+    return _
+
+
+def train_resnet18(ds, eval_sets, n_epochs=20):
     A_val, A_test, B_val, B_test = eval_sets
     mlp = resnet18("IMAGENET1K_V1").to(device)
     mlp.fc = nn.Linear(mlp.fc.in_features, 10).to(device)
@@ -108,14 +124,12 @@ def train_resnet18(ds, eval_sets, n_epochs=150):
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(mlp.parameters(), lr=1e-4)
 
-    loader = ds_loader(ds)
-
     dest_test = torch.zeros((2, n_epochs // 10, len(A_test[0]), 10))
     dest_val  = torch.zeros((2, n_epochs // 10, len(A_val[0]),  10))
 
     train(
         mlp,
-        loader,
+        ds,
         loss_fn,
         optimizer,
         n_epochs,
@@ -155,7 +169,7 @@ ds = ImageFolder(
     target_transform=lambda x: torch.eye(10)[int(x)],
 )
 ds_labels = torch.vstack([y for _, y in tqdm(ds)]).to(device)
-ds_imgs = torch.cat([X.unsqueeze(0) for X, _ in tqdm(ds)]).to(device)
+ds_imgs = torch.cat([X[0].unsqueeze(0) for X, _ in tqdm(ds)]).to(device)
 ds = (ds_imgs, ds_labels)
 ds_num = torch.argmax(ds_labels, 1).to(device)
 
