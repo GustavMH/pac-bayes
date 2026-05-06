@@ -29,6 +29,8 @@ def arr2d_to_df(
     })
 
 def optimize_rho(bound: str, params: dict = {}):
+    """Given a string BOUND, and PARAMS dict. w. keys gibbs_risks, n1, tandem_risks, n2, produce a weighting RHO"""
+
     # Prior weights, used to calculate kl(pi||rho)
     L = params["gibbs_risks"]
     n1 = params["n1"]

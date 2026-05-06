@@ -105,4 +105,6 @@ def split_bootstrap(
 
     return sample_idx, oob_idx
 
-
+def vote(preds: np.array, rho: np.array):
+    """vote weighted by RHO on PREDS"""
+    return np.argmax(preds * rho, 0)
