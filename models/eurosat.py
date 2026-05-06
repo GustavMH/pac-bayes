@@ -69,8 +69,8 @@ def train(model, dataset, loss_fn, optimizer, n_epochs, callbacks=[]):
                 pred = model(X)
                 loss = loss_fn(pred, y)
 
-            loss.backward()
-            optimizer.step()
+            # loss.backward()
+            # optimizer.step()
 
             running_loss += loss.item()
 
@@ -109,7 +109,7 @@ def model_check():
     return _
 
 
-def train_resnet18(ds, eval_sets, n_epochs=20):
+def train_resnet18(ds, eval_sets, n_epochs=30):
     A_val, A_test, B_val, B_test = eval_sets
     mlp = resnet18("IMAGENET1K_V1").to(device)
     mlp.fc = nn.Linear(mlp.fc.in_features, 10).to(device)
@@ -122,10 +122,10 @@ def train_resnet18(ds, eval_sets, n_epochs=20):
     )
 
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(mlp.parameters(), lr=1e-4)
+    optimizer = torch.optim.AdamW(mlp.parameters(), lr=1e-4)
 
-    dest_test = torch.zeros((2, n_epochs // 10, len(A_test[0]), 10))
-    dest_val  = torch.zeros((2, n_epochs // 10, len(A_val[0]),  10))
+    dest_test = torch.zeros((2, n_epochs, len(A_test[0]), 10))
+    dest_val  = torch.zeros((2, n_epochs, len(A_val[0]),  10))
 
     train(
         mlp,
@@ -134,10 +134,10 @@ def train_resnet18(ds, eval_sets, n_epochs=20):
         optimizer,
         n_epochs,
         callbacks=[
-            snapshot_callback(A_test, dest_test[0], 10),
-            snapshot_callback(B_test, dest_test[1], 10),
-            snapshot_callback(A_val, dest_val[0], 10),
-            snapshot_callback(B_val, dest_val[1], 10),
+            snapshot_callback(A_test, dest_test[0], 1),
+            snapshot_callback(B_test, dest_test[1], 1),
+            snapshot_callback(A_val, dest_val[0], 1),
+            snapshot_callback(B_val, dest_val[1], 1),
         ],
     )
     return {"test": dest_test, "val": dest_val}
@@ -169,7 +169,7 @@ ds = ImageFolder(
     target_transform=lambda x: torch.eye(10)[int(x)],
 )
 ds_labels = torch.vstack([y for _, y in tqdm(ds)]).to(device)
-ds_imgs = torch.cat([X[0].unsqueeze(0) for X, _ in tqdm(ds)]).to(device)
+ds_imgs = torch.cat([X.unsqueeze(0) for X, _ in tqdm(ds)]).to(device)
 ds = (ds_imgs, ds_labels)
 ds_num = torch.argmax(ds_labels, 1).to(device)
 
