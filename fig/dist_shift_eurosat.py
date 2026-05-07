@@ -2,18 +2,47 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 from pathlib import Path
 from models.util import tandem_risks, gibbs_risks
 import bounds
+from itertools import product
+from tqdm import tqdm
+
+def load_eurosat():
+    path = Path("~/Downloads/eurosat_chroma_shift.npz").expanduser()
+    res = dict(np.load(path))
+
+    # (10 runs, 5 training mixes, 2 test sets, 15 snapshots, 2700 examples, 10 categories)
+    # Take model trained on A, see performance on A, trained for 10 epochs
+
+    collect = [[[None] * 30] * 2] * 5
+    for AB in [1,0]:
+        val_labels = res["val_labels"][AB]
+        test_labels = res["test_labels"][AB]
+        for shift, i in tqdm(list(product(range(5), range(30)))):
+            val_preds = res["validation"][:,shift,AB,i].argmax(-1)
+            test_preds = res["test"][:,shift,AB,i].argmax(-1)
+
+            collect[shift][AB][i] = calc_stats(val_preds, val_labels, test_preds, test_labels)
+
+    return collect
 
 try:
     res
 except NameError:
-    path = Path("~/Downloads/eurosat_chroma_shift.npz").expanduser()
+    path = "~/Downloads/pac-bayes-predictions/imdb_predictions.npz"
+    path = Path(path).expanduser()
     res = dict(np.load(path))
 
-# (10 runs, 5 training mixes, 2 test sets, 15 snapshots, 2700 examples, 10 categories)
-# Take model trained on A, see performance on A, trained for 10 epochs
+    collect = [None] * 50
+    val_labels = res["labels_validation"]
+    test_labels = res["labels_test"]
+    for i in tqdm(range(50)):
+        val_preds = res["predictions_validation"][i].argmax(-1)
+        test_preds = res["predictions_test"][i].argmax(-1)
+
+        collect[i] = calc_stats(val_preds, val_labels, test_preds, test_labels)
 
 def vote(preds: np.array, rho: np.array):
     """vote weighted by RHO on PREDS"""
@@ -28,120 +57,89 @@ def loss(rho, X, y):
 def est_feasible_region(X, y, n_iter=1000):
     simplex = np.random.randint(0,11,size=(1000,10))
     simplex = simplex / simplex.sum(-1)[:, None]
-    opt = np.array([loss(rho, X, y) for rho in simplex])
+    opt = np.array([loss(rho, X, y) for rho in np.concat((simplex, np.eye(10)))])
     return np.max(opt), np.min(opt)
 
-fig, axss = plt.subplots(2,1,figsize=(5.5,3.5),sharex=True,sharey=True)
+def max_feasible_region(X, y):
+    hi = 1-(X == y[None, :]).any(0).mean()
+    lo = 1-(X == y[None, :]).all(0).mean()
+    return hi, lo
 
-labels_A, labels_B = res["val_labels"]
-tst_lab_A, tst_lab_B = res["test_labels"]
+def calc_stats(val_preds, val_labels, test_preds, test_labels):
+    risks, n1 = gibbs_risks(val_preds, val_labels)
+    tnd, n2 = tandem_risks(val_preds, val_labels)
+    params = {"tandem_risks": tnd, "n2": n2, "gibbs_risks": risks, "n1": n1}
+    rho, bound, _ = bounds.optimize_rho("tnd", params)
+    rho_fo, bound_fo, _ = bounds.optimize_rho("lambda", params)
 
-vmin = 1
-vmax = 0
-collect_risks_A = np.zeros((30,10))
-collect_risks_B = np.zeros((30,10))
-collect_bounds_A = np.zeros(30)
-collect_bounds_B = np.zeros(30)
-collect_rhos_A = np.zeros((30,10))
-collect_rhos_B = np.zeros((30,10))
-collect_reg_A = np.zeros((30,2))
-collect_reg_B = np.zeros((30,2))
-collect_res_A = np.zeros(30)
-collect_res_B = np.zeros(30)
-collect_uni_A = np.zeros(30)
-collect_uni_B = np.zeros(30)
-for i in range(30):
-    preds_A = res["validation"][:,0,0,i].argmax(-1)
-    preds_B = res["validation"][:,0,1,i].argmax(-1)
-    test_A = res["test"][:,0,0,i].argmax(-1)
-    test_B = res["test"][:,0,1,i].argmax(-1)
-
-    risks_A, n1_A = gibbs_risks(preds_A, labels_A)
-    tnd_A, n2_A = tandem_risks(preds_A, labels_A)
-    collect_risks_A[i] = risks_A
-    params_A = {"tandem_risks": tnd_A, "n2": n2_A, "gibbs_risks": risks_A, "n1": n1_A}
-    rho_A, bound_A, _ = bounds.optimize_rho("tnd", params_A)
-    collect_bounds_A[i] = bound_A
-    collect_rhos_A[i] = rho_A
-    collect_reg_A[i] = est_feasible_region(np.eye(10)[test_A], tst_lab_A)
-    collect_res_A[i] = loss(rho_A, np.eye(10)[test_A], tst_lab_A)
-    collect_uni_A[i] = loss(np.ones(10) / 10, np.eye(10)[test_A], tst_lab_A)
-
-    risks_B, n1_B = gibbs_risks(preds_B, labels_B)
-    tnd_B, n2_B = tandem_risks(preds_B, labels_B)
-    collect_risks_B[i] = risks_B
-    params_B = {"tandem_risks": tnd_B, "n2": n2_B, "gibbs_risks": risks_B, "n1": n1_B}
-    rho_B, bound_B, _ = bounds.optimize_rho("tnd", params_B)
-    collect_bounds_B[i] = bound_B
-    collect_rhos_B[i] = rho_B
-    collect_reg_B[i] = est_feasible_region(np.eye(10)[test_B], tst_lab_B)
-    collect_res_B[i] = loss(rho_B, np.eye(10)[test_B], tst_lab_B)
-    collect_uni_B[i] = loss(np.ones(10) / 10, np.eye(10)[test_B], tst_lab_B)
-
-    print(f"{bound_A=} {bound_B=}")
-
-idx = np.argsort(collect_risks_B[-1])
-vmin = np.min([collect_risks_A, collect_risks_B])
-vmax = np.max([collect_risks_A, collect_risks_B])
-
-fig.supxlabel("Epoch")
-fig.supylabel("Training run")
-axss[0].imshow(collect_risks_A.T[idx], interpolation='nearest', aspect='auto')
-m = axss[1].imshow(collect_risks_B.T[idx], interpolation='nearest', aspect='auto')
-
-fig.subplots_adjust(right=0.8)
-cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-fig.colorbar(m, cax=cbar_ax)
-
-plt.savefig("eurosat_IN1K.png")
-plt.close()
+    return {
+        **params,
+        "tnd_rho": rho,
+        "tnd_bound": bound,
+        "tnd_test_loss": loss(rho, np.eye(10)[test_preds], test_labels),
+        "fo_rho": rho_fo,
+        "fo_bound": bound_fo,
+        "fo_test_loss": loss(rho_fo, np.eye(10)[test_preds], test_labels),
+        "uni_test_loss": loss(np.ones(10) / 10, np.eye(10)[test_preds], test_labels),
+        "uni_bound": loss(np.ones(10) / 10, np.eye(10)[val_preds], val_labels) + np.sqrt(np.log(2/0.05)/(2*len(val_preds[0]))),
+        "min_feasible_region": est_feasible_region(np.eye(10)[test_preds], test_labels),
+        "max_feasible_region": max_feasible_region(test_preds, test_labels)
+    }
 
 
-fig, ax = plt.subplots(1,1,figsize=(5.5,4),sharex=True,sharey=True)
-plt.title("Voting ensembles, 10 members, before shift")
-ax.plot(collect_res_A, label="Weighted loss A")
-ax.plot(collect_uni_A, label="Uniform loss A")
-ax.fill_between(np.arange(30), collect_reg_A[:,0], collect_reg_A[:,1], label="Est. feasible region A", alpha=0.2)
-ax.set_xlabel("Epoch")
-ax.set_ylabel("Loss")
-ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=0))
-ax.legend()
+def plot_mats(mats, titles=[], figname="risks"):
+    fig, axss = plt.subplots(len(mats),1,figsize=(5.5,5),sharex=True,sharey=True,layout="compressed")
 
-plt.savefig("fig/eurosat_perf_A.png")
-plt.close()
+    fig.supxlabel("Epoch")
+    fig.supylabel("Training run")
 
-fig, ax = plt.subplots(1,1,figsize=(5.5,4),sharex=True,sharey=True)
-plt.title("Voting ensembles, 10 members, after shift")
-ax.plot(collect_res_B, label="Weighted loss B")
-ax.plot(collect_uni_B, label="Uniform loss B")
-ax.set_xlabel("Epoch")
-ax.set_ylabel("Loss")
-ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=0))
+    idx = np.argsort(mats[-1][-1])
+    for ax, mat, title in zip(axss, mats, titles):
+        ax.set_title(title)
+        m = ax.imshow(mat.T[idx], interpolation='nearest', aspect='auto')
 
-ax.fill_between(np.arange(30), collect_reg_B[:,0], collect_reg_B[:,1], label="Est. feasible region B", alpha=0.2)
-ax.legend()
-plt.savefig("fig/eurosat_perf_B.png")
-plt.close()
+    plt.savefig(f"fig/{figname}.png")
+    plt.close()
 
-fig, ax = plt.subplots(1,1,figsize=(5.5,4),sharex=True,sharey=True,layout="tight")
-plt.title("Voting ensembles, optimized 'tnd' bound, 10 members")
-ax.plot(collect_res_A, label="Weighted loss A")
-ax.fill_between(np.arange(30), collect_res_A, collect_bounds_A, label="Loss bound A", alpha=0.2)
 
-ax.plot(collect_res_B, label="Weighted loss B")
-ax.fill_between(np.arange(30), collect_res_B, collect_bounds_B, label="Loss bound B", alpha=0.2)
+def plot_test_perf(risks, min_region, max_region, risk_labels=[], figname="test_perf"):
+    fig, ax = plt.subplots(1,1,figsize=(5.5,4),sharex=True,sharey=True,layout="compressed")
+    plt.title(f"Voting ensembles, 10 members, IMDB")
 
-ax.set_xlabel("Epoch")
-ax.set_ylabel("Loss")
-from matplotlib.ticker import PercentFormatter
-ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=0))
-ax.legend()
-plt.savefig("fig/eurosat_bounds_B.png")
-plt.close()
+    for risk, label in zip(risks, risk_labels):
+        ax.plot(risk, label=label)
+
+    #ax.fill_between(np.arange(len(min_region[:,0])), min_region[:,0], min_region[:,1], label=f"Min. feasible region", alpha=0.2)
+    #ax.plot(max_region[:,0], label=f"Max. feasible region", alpha=0.5, c="tab:blue", linestyle="dotted")
+
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=1))
+    ax.legend()
+
+    plt.savefig(f"fig/{figname}.png")
+    plt.close()
+
+
+def plot_bounds():
+    fig, ax = plt.subplots(1,1,figsize=(5.5,4),sharex=True,sharey=True,layout="tight")
+    plt.title("Voting ensembles, uniform, 10 members")
+    ax.plot(collect_uni_A, label="Uniform loss A")
+    ax.fill_between(np.arange(30), collect_uni_A, collect_bounds_uni_A, label="Loss bound A", alpha=0.2)
+
+    ax.plot(collect_uni_B, label="Uniform loss B")
+    ax.fill_between(np.arange(30), collect_uni_B, collect_bounds_uni_B, label="Loss bound B", alpha=0.2)
+
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=0))
+    ax.legend()
+
+    plt.savefig(f"fig/{figname}.png")
+    plt.close()
 
 
 def plot_voting():
-
     X=softmax(res["test"][:,0,0,0])
     y=res["test_labels"][0]
 
@@ -150,9 +148,6 @@ def plot_voting():
 
     loss(np.ones(10)/10, Xs, ys)
 
-    # Søg efter optimal vægt vha. binær søgning?
-
-    # res = minimize(lambda rho: np.abs(np.matvec((X-y).T, softmax(rho)).sum(-1)).sum(), np.ones(10) / 10)
     ind = [i for i, _ in sorted(enumerate(np.concat([ys[None,:],Xs.argmax(-1)]).T), key=lambda x: tuple(x[1]))]
     ind = np.array(ind)
 
