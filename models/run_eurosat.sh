@@ -5,4 +5,9 @@
 
 source ~/venv/bin/activate
 
-python models/eurosat.py
+python models/eurosat.py \
+    --model "resnet18"
+    --scheduler "tri"
+    --n-epochs 50
+    --cycle-size 10
+    --dataset "EuroSAT"

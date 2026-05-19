@@ -7,12 +7,14 @@ from torch.amp import GradScaler
 
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import ToTensor
-from torchvision.models import resnet18
+from models.resnet import resnet18
 
 from tqdm import tqdm
 
 import numpy as np
+from argparse import ArgumentParser
 from itertools import batched, groupby, accumulate
+
 
 def gpu_or_quit() -> str:
     if torch.accelerator.is_available():
@@ -22,6 +24,8 @@ def gpu_or_quit() -> str:
     else:
         print("No GPU allocated >:(", flush=True)
         #exit(3)
+
+device = gpu_or_quit()
 
 def split_by_chroma(ds):
     imgs, labels = ds
@@ -56,7 +60,7 @@ def split_idx(idx, ratios):
         for offset, n in zip(accumulate(lens), lens)
     ]
 
-def train(model, dataset, loss_fn, optimizer, n_epochs, callbacks=[]):
+def train(model, dataset, scheduler, loss_fn, optimizer, n_epochs, callbacks=[], lr_step="epoch"):
     model.train()
     model.to(device)
     scaler = GradScaler()
@@ -69,14 +73,17 @@ def train(model, dataset, loss_fn, optimizer, n_epochs, callbacks=[]):
                 pred = model(X)
                 loss = loss_fn(pred, y)
 
-            # loss.backward()
-            # optimizer.step()
-
             running_loss += loss.item()
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
+
+            if lr_step == "batch":
+                scheduler.step()
+
+        if lr_step == "epoch":
+            scheduler.step()
 
         for callback in callbacks:
             callback(model, epoch_n)
@@ -100,7 +107,6 @@ def snapshot_callback(ds, dest, per_n_epochs, batch_size=64):
     return save
 
 def model_check():
-
     def _(model, epoch_n):
         for name, param in model.named_parameters():
             if "weight" in name:
@@ -109,27 +115,27 @@ def model_check():
     return _
 
 
-def train_resnet18(ds, eval_sets, n_epochs=30):
+def train_model(model, scheduler, ds, eval_sets, n_epochs=30):
     A_val, A_test, B_val, B_test = eval_sets
-    mlp = resnet18("IMAGENET1K_V1").to(device)
-    mlp.fc = nn.Linear(mlp.fc.in_features, 10).to(device)
     print(A_val[0][0].shape)
-    mlp(A_val[0][0].unsqueeze(0).to(device))
+    model(A_val[0][0].unsqueeze(0).to(device))
     print(
         "Training a "
-        f"{sum(p.numel() for p in mlp.parameters() if p.requires_grad):_}"
+        f"{sum(p.numel() for p in model.parameters() if p.requires_grad):_}"
         f" parameter model, for {n_epochs} epochs"
     )
 
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(mlp.parameters(), lr=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    sched = scheduler(optimizer, cycle_size=args["cycle_size"])
 
     dest_test = torch.zeros((2, n_epochs, len(A_test[0]), 10))
     dest_val  = torch.zeros((2, n_epochs, len(A_val[0]),  10))
 
     train(
-        mlp,
+        model,
         ds,
+        sched,
         loss_fn,
         optimizer,
         n_epochs,
@@ -160,53 +166,99 @@ def ds_loader(ds, batch_size=64, shuffle=True):
             torch.index_select(labels, 0, batch),
         )
 
-torch.cuda.empty_cache()
+def main(args=None):
+    torch.cuda.empty_cache()
 
-device = gpu_or_quit()
-ds = ImageFolder(
-    "data/EuroSAT",
-    transform=ToTensor(),
-    target_transform=lambda x: torch.eye(10)[int(x)],
-)
-ds_labels = torch.vstack([y for _, y in tqdm(ds)]).to(device)
-ds_imgs = torch.cat([X.unsqueeze(0) for X, _ in tqdm(ds)]).to(device)
-ds = (ds_imgs, ds_labels)
-ds_num = torch.argmax(ds_labels, 1).to(device)
+    if not args:
+        parser = ArgumentParser(prog = "train on EuroSAT")
+        parser.add_argument("-d","--dataset")
+        parser.add_argument("--scheduler")
+        parser.add_argument("--model")
+        parser.add_argument("--out-file")
+        parser.add_argument("--n-runs")
+        parser.add_argument("--n-epochs")
+        parser.add_argument("--cycle-size")
 
-idx_A, idx_B = split_by_chroma(ds)
+        args = parser.parse_args()
 
-A_train, A_val, A_test = split_idx(idx_A, [0.7, 0.1, 0.2])
-B_train, B_val, B_test = split_idx(idx_B, [0.7, 0.1, 0.2])
+    ds = None
+    match args["dataset"].lower():
+        case "eurosat":
+            ds = ImageFolder(
+                "data/EuroSAT",
+                transform=ToTensor(),
+                target_transform=lambda x: torch.eye(10)[int(x)],
+            )
 
-idx_mix = [[mix_idxs(A_train, B_train, ratio) for ratio in [0.0, 0.25, 0.5, 0.75, 1]] for _ in range(10)]
+    scheduler = None
+    match args["scheduler"].lower():
+        case "none":
+            scheduler = torch.optim.lr_scheduler.LRScheduler
+        case "cos":
+            from models.schedulers import CyclicCosineAnnealingLR
+            scheduler = CyclicCosineAnnealingLR
+        case "tri":
+            from models.schedulers import TriangularCyclicLR
+            scheduler = TriangularCyclicLR
 
-eval_sets = (ds_subset(ds, A_val), ds_subset(ds, A_test), ds_subset(ds, B_val), ds_subset(ds, B_test))
+    model = None
+    match args["model"].lower():
+        case "resnet18":
+            import models
+            model = models.resnet.resnet18(weights=None)
+        case "resnet18_pretrained":
+            import models
+            model = models.resnet.resnet18()
+        case "mlp":
+            import models.mlp
+            model = models.mlp.MLP()
 
-res = [[train_resnet18(ds_subset(ds, idx), eval_sets) for idx in run] for run in idx_mix]
-res_val = np.array([[X["val"] for X in run] for run in res])
-res_test = np.array([[X["test"] for X in run] for run in res])
+    assert(args["out_file"])
+    assert(int(args["n_runs"]))
+    assert(int(args["n_epochs"]))
 
-try:
-    # This should be different for the two val sets
-    print((np.argmax(res_val, -1) == np.array(torch.index_select(ds_num, 0, A_val.to(device)).cpu())).mean(-1).round(1))
-    print((np.argmax(res_val, -1) == np.array(torch.index_select(ds_num, 0, B_val.to(device)).cpu())).mean(-1).round(1))
-except:
-    print("Woops!")
+    ds_labels = torch.vstack([y for _, y in tqdm(ds)]).to(device)
+    ds_imgs = torch.cat([X.unsqueeze(0) for X, _ in tqdm(ds)]).to(device)
+    ds = (ds_imgs, ds_labels)
+    ds_num = torch.argmax(ds_labels, 1).to(device)
 
-np.savez_compressed(
-    "models/eurosat_chroma_shift.npz",
-    validation=res_val,
-    test=res_test,
-    val_labels=np.array(
-        [
-            torch.index_select(ds_num, 0, A_val.to(device)).cpu(),
-            torch.index_select(ds_num, 0, B_val.to(device)).cpu(),
-        ]
-    ),
-    test_labels=np.array(
-        [
-            torch.index_select(ds_num, 0, A_test.to(device)).cpu(),
-            torch.index_select(ds_num, 0, B_test.to(device)).cpu(),
-        ]
-    ),
-)
+    idx_A, idx_B = split_by_chroma(ds)
+
+    A_train, A_val, A_test = split_idx(idx_A, [0.7, 0.1, 0.2])
+    B_train, B_val, B_test = split_idx(idx_B, [0.7, 0.1, 0.2])
+
+    idx_mix = [[A_train, B_train] for _ in range(int(args["n_runs"]))]
+
+    eval_sets = (ds_subset(ds, A_val), ds_subset(ds, A_test), ds_subset(ds, B_val), ds_subset(ds, B_test))
+
+    res = [[train_model(model, scheduler, ds_subset(ds, idx), eval_sets, n_epocs=int(args["n_epochs"])) for idx in run] for run in idx_mix]
+    res_val = np.array([[X["val"] for X in run] for run in res])
+    res_test = np.array([[X["test"] for X in run] for run in res])
+
+    try:
+        # This should be different for the two val sets
+        print((np.argmax(res_val, -1) == np.array(torch.index_select(ds_num, 0, A_val.to(device)).cpu())).mean(-1).round(1))
+        print((np.argmax(res_val, -1) == np.array(torch.index_select(ds_num, 0, B_val.to(device)).cpu())).mean(-1).round(1))
+    except:
+        print("Woops!")
+
+    np.savez_compressed(
+        args["out_file"],
+        validation=res_val,
+        test=res_test,
+        val_labels=np.array(
+            [
+                torch.index_select(ds_num, 0, A_val.to(device)).cpu(),
+                torch.index_select(ds_num, 0, B_val.to(device)).cpu(),
+            ]
+        ),
+        test_labels=np.array(
+            [
+                torch.index_select(ds_num, 0, A_test.to(device)).cpu(),
+                torch.index_select(ds_num, 0, B_test.to(device)).cpu(),
+            ]
+        ),
+    )
+
+if __name__ == "__main__":
+    main()
