@@ -4,10 +4,6 @@
 #SBATCH --gres=gpu:titanrtx
 
 source ~/venv/bin/activate
+pwd
 
-python models/eurosat.py \
-    --model "resnet18"
-    --scheduler "tri"
-    --n-epochs 50
-    --cycle-size 10
-    --dataset "EuroSAT"
+python models/eurosat.py

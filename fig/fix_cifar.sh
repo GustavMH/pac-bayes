@@ -5,4 +5,4 @@
 
 source ~/venv/bin/activate
 
-python models/eurosat.py
+python fig/fix_cifar100.py
