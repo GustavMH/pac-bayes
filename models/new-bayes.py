@@ -2,6 +2,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from joblib import delayed, Parallel
 
 def gen_pair_normals(rng, n_draws=200, n_dims=100, shift_rads=0):
     x, y = np.cos(shift_rads), np.sin(shift_rads)
@@ -123,64 +124,128 @@ def plot_example_plugin():
     plt.savefig("fig/example_plugin_est.pdf")
     plt.close()
 
-fig, axs = plt.subplots(1,2,figsize=(5.1,2.2),layout="tight")
+def plot_plugin_region():
+    fig, axs = plt.subplots(1,2,figsize=(5.1,2.2),layout="tight")
+
+    rng = np.random.default_rng()
+    a, b = gen_pair_normals(rng, 150)
+    val = gen_pair_normals(rng, 200)
+
+    ests = fit_ensemble(a, b, 5, rng)
+    p1 = test_ensemble(ests, *val)
+
+    l = np.zeros(400)
+    r = np.zeros(400)
+
+    im = np.zeros((400,400))
+    #t3 = ax.plot([0,0], [3,-3], c = "black")
+    for est in ests:
+        slope = plugin_to_slope(est)
+        l = np.minimum(l, np.linspace(-3,3,400)/slope)
+        r = np.maximum(r, np.linspace(-3,3,400)/slope)
+        im += np.add.outer(np.linspace(-3,3,400), np.linspace(-.5,.5,400)*-abs(slope)) < 0
+        #t3 = axs[0].plot([3/slope, -3/slope], [3,-3], c = "tab:blue",  label = "Plug-in")
+
+    #axs[0].fill_betweenx(np.linspace(-3,3,400), r, l, color="grey", alpha=0.4)
+
+    axs[0].imshow(im/len(ests), interpolation="bicubic")
+    axs[0].contour(
+        im/len(ests),
+        levels=[0.01,0.5,0.99],
+        colors=["black", "white", "black"],
+        linestyles=["solid", "dotted", "solid"],
+        linewidths=[.5,1,.5]
+    )
+    axs[0].set_title("Plug-in")
+
+    ests = fit_ols_ensemble(a, b, 5, rng)
+    p2 = test_ols_ensemble(ests, *val)
+    l = np.zeros(400)
+    r = np.zeros(400)
+
+
+    im = np.zeros((400,400))
+
+    for (bias, cx, cy, *_) in ests:
+        line = lambda y: (-bias-cy*y)/cx
+        l = np.minimum(l, line(np.linspace(-3,3,400)))
+        r = np.maximum(r, line(np.linspace(-3,3,400)))
+        im += (np.add.outer(np.linspace(-3,3,400)*cy, np.linspace(-.5,.5,400)*cx)+bias) < 0
+        #t4 = axs[1].plot([line(3), line(-3)], [3,-3], c = "tab:orange", label = "OLS")
+
+    axs[1].imshow(im/len(ests), interpolation="bicubic")
+    axs[1].contour(
+        im/len(ests),
+        levels=[0.01,0.5,0.99],
+        colors=["black", "white", "black"],
+        linestyles=["solid", "dotted", "solid"],
+        linewidths=[.5,1,.5]
+    )
+    axs[1].set_title("OLS")
+    #axs[1].fill_betweenx(np.linspace(-3,3,200), r, l, color="grey", alpha=0.4)
+
+    plt.savefig("fig/plugin_region.pdf")
+    plt.close()
+
+
+def vote(preds, rho, labels):
+    return ((rho[:,None,None] * np.eye(2)[preds*1]).sum(0).argmax(-1) == labels).mean()
+
+def test_shift(rng, angle, lat_shift):
+    shift_vec = np.zeros(200)
+    shift_vec[0] = lat_shift
+
+    a, b = gen_pair_normals(rng, 100, 200)
+    a_val, b_val = gen_pair_normals(rng, 100, 200, angle)
+    a_val += shift_vec
+    b_val += shift_vec
+    a_test, b_test = gen_pair_normals(rng, 200, 200, angle)
+    a_test += shift_vec
+    b_test += shift_vec
+
+    res = []
+    for i in range(10):
+        ests = fit_ensemble(a, b, 10, rng)
+        p1 = test_ensemble(ests, a_val, b_val)
+        rho_fo, bound_fo, _ = optimize_rho("lambda", p1)
+        rho_tnd, bound_tnd, _ = optimize_rho("tnd", p1)
+        rhos = [np.ones(10)/10, rho_fo, rho_tnd]
+        res.append([vote(p1["test_predictions"], rho, p1["test_labels"]) for rho in rhos])
+
+    return res
+
+from tqdm import tqdm
+import matplotlib as mpl
 
 rng = np.random.default_rng()
-a, b = gen_pair_normals(rng, 150)
-val = gen_pair_normals(rng, 200)
 
-ests = fit_ensemble(a, b, 5, rng)
-p1 = test_ensemble(ests, *val)
+fig, ax = plt.subplots(1,2,figsize=(5.1,2.2),sharey=True,layout="constrained")
 
-l = np.zeros(400)
-r = np.zeros(400)
+x_axis = np.linspace(0, np.pi, 20)
+y_axis = np.linspace(0,2,15)
+def _f(rng):
+    return [[test_shift(rng, angle, lat_shift) for angle in x_axis] for lat_shift in y_axis]
+#res = Parallel(-1)(delayed(_f)(np.random.default_rng(i)) for i in tqdm(range(64)))
+#res = np.array(res)
 
-im = np.zeros((400,400))
-#t3 = ax.plot([0,0], [3,-3], c = "black")
-for est in ests:
-    slope = plugin_to_slope(est)
-    l = np.minimum(l, np.linspace(-3,3,400)/slope)
-    r = np.maximum(r, np.linspace(-3,3,400)/slope)
-    im += np.add.outer(np.linspace(-3,3,400), np.linspace(-.5,.5,400)*-abs(slope)) < 0
-    #t3 = axs[0].plot([3/slope, -3/slope], [3,-3], c = "tab:blue",  label = "Plug-in")
+r = res.mean(0).mean(2)
+vmax = np.max(r[:,:,1:] - r[:,:,0,None])
+vmin = np.min(r[:,:,1:] - r[:,:,0,None])
 
-#axs[0].fill_betweenx(np.linspace(-3,3,400), r, l, color="grey", alpha=0.4)
+i1 = ax[0].imshow(r[:,:,1] - r[:,:,0], vmax=vmax, vmin=0, cmap="inferno", origin="lower")
+i2 = ax[1].imshow(r[:,:,2] - r[:,:,0], vmax=vmax, vmin=0, cmap="inferno", origin="lower")
 
-axs[0].imshow(im/len(ests), interpolation="bicubic")
-axs[0].contour(
-    im/len(ests),
-    levels=[0.01,0.5,0.99],
-    colors=["black", "white", "black"],
-    linestyles=["solid", "dotted", "solid"],
-    linewidths=[.5,1,.5]
-)
-axs[0].set_title("Plug-in")
+ax[0].set_ylabel("Lateral shift")
+ax[0].set_yticks([0,len(y_axis)-1],("0", "2"))
+ax[0].set_title("First-order weights")
+ax[1].set_title("Tandem weights")
+ax[0].set_xlabel("Shift angle")
+ax[0].set_xticks([0,len(x_axis)-1], ("0", "$\\pi$"))
+ax[1].set_xlabel("Shift angle")
+ax[1].set_xticks([0,len(x_axis)-1], ("0", "$\\pi$"))
 
-ests = fit_ols_ensemble(a, b, 5, rng)
-p2 = test_ols_ensemble(ests, *val)
-l = np.zeros(400)
-r = np.zeros(400)
+cbar = fig.colorbar(i1, ax=ax.ravel().tolist(), shrink=.71, aspect=16, format=mpl.ticker.PercentFormatter(1,0,"pp"))
+cbar.set_label("Improvement")
 
-
-im = np.zeros((400,400))
-
-for (bias, cx, cy, *_) in ests:
-    line = lambda y: (-bias-cy*y)/cx
-    l = np.minimum(l, line(np.linspace(-3,3,400)))
-    r = np.maximum(r, line(np.linspace(-3,3,400)))
-    im += (np.add.outer(np.linspace(-3,3,400)*cy, np.linspace(-.5,.5,400)*cx)+bias) < 0
-    #t4 = axs[1].plot([line(3), line(-3)], [3,-3], c = "tab:orange", label = "OLS")
-
-axs[1].imshow(im/len(ests), interpolation="bicubic")
-axs[1].contour(
-    im/len(ests),
-    levels=[0.01,0.5,0.99],
-    colors=["black", "white", "black"],
-    linestyles=["solid", "dotted", "solid"],
-    linewidths=[.5,1,.5]
-)
-axs[1].set_title("OLS")
-#axs[1].fill_betweenx(np.linspace(-3,3,200), r, l, color="grey", alpha=0.4)
-
-plt.savefig("fig/plugin_region.pdf")
+plt.savefig("fig/test_shift.pdf")
 plt.close()

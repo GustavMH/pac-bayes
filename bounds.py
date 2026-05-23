@@ -78,20 +78,28 @@ def gen_bounds(f: Path):
     ds = dict([(key, ds_npz[key]) for key in ds_npz.keys()])
     bounds = ["lambda", "tnd", "cctnd", "bennett"]
 
+    def vote(preds, rho, labels):
+        n_cats = int(np.max(preds))+1
+        preds = np.eye(n_cats)[preds.astype(np.int64)]
+        preds = (preds * rho[:,None,None]).sum(0).argmax(-1)
+        return (preds == labels).mean()
+
     def eval_bound(bound, dataset):
         res = [optimize_rho(bound, params) for params in ds[dataset]]
         bounds = [b for _, b, _ in res]
         rhos = [r for r, _, _ in res]
-        mv = [((params["test_predictions"] == params["test_labels"])*rho[:,None]).mean()
-              for params, rho in zip(ds[dataset], rhos)]
-        return np.mean(bounds), np.mean(mv)
+        lambdas = [10**-9 >= p.get("lambda", 1) for _, _, p in res]
+        v = [vote(params["test_predictions"], rho, params["test_labels"])
+             for params, rho in zip(ds[dataset], rhos)]
+        return np.mean(bounds), np.mean(v), np.mean(lambdas)
 
     res = np.array([[
         eval_bound(bound, dataset)
         for dataset in ds.keys()
     ] for bound in bounds])
 
-    mv_bounds = arr2d_to_df(res[:,:,0], bounds, ds.keys())
-    mv_risk   = arr2d_to_df(res[:,:,1], bounds, ds.keys())
+    mv_bounds  = arr2d_to_df(res[:,:,0], bounds, ds.keys())
+    mv_risk    = arr2d_to_df(res[:,:,1], bounds, ds.keys())
+    mv_lambdas = arr2d_to_df(res[:,:,2], bounds, ds.keys())
 
-    return mv_bounds, mv_risk
+    return mv_bounds, mv_risk, mv_lambdas

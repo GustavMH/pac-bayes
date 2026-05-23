@@ -157,6 +157,10 @@ def plot_optimal_hull(path="fig/optimal_hull.png"):
 
 
 import matplotlib as mpl
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif"
+})
 
 rng = np.random.default_rng()
 a, b = gen_pair_normals(rng, 100, 200)
@@ -172,10 +176,10 @@ a, b = gen_pair_normals(rng, 100, 200)
 
 fig, ax = plt.subplots(1,1,figsize=(5.1,3.2),layout="tight")
 
-cmap = mpl.cm.get_cmap("cividis")
+cmap = mpl.cm.get_cmap("inferno")
 
-t1 = ax.plot(*a[:, :2].T, marker = ".", linestyle = "none", label = "$\\mathcal{N}([+1, 0, \\dots, 0], I)$")
-t2 = ax.plot(*b[:, :2].T, marker = ".", linestyle = "none", label = "$\\mathcal{N}([-1, 0, \\dots, 0], I)$")
+t1 = ax.plot(*a[:, :2].T, marker = ".", linestyle = "none", label = "$\\mathcal{N}([+1, 0, \\dots, 0], I)$", color="grey")
+t2 = ax.plot(*b[:, :2].T, marker = ".", linestyle = "none", label = "$\\mathcal{N}([-1, 0, \\dots, 0], I)$", color="black")
 for i in range(4,200,10):
     bias, cx, cy, *_ = fit_plane(a[:,:i],b[:,:i])
     line = lambda y: (-bias-cy*y)/cx
@@ -183,7 +187,8 @@ for i in range(4,200,10):
 t3 = ax.plot([0,0], [-3,3], label = "Optimal", c = "black", ls = "dotted")
 ax.set_ylim([-3,3])
 ax.set_xlim([-3,3])
-fig.colorbar(plt.cm.ScalarMappable(norm=mpl.colors.Normalize(vmin=4, vmax=200), cmap=cmap), ax=ax)
+cbar = fig.colorbar(plt.cm.ScalarMappable(norm=mpl.colors.Normalize(vmin=4, vmax=200), cmap=cmap), ax=ax)
+cbar.set_label("No. of dimension")
 ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=False, shadow=False, ncol=3, handles=t1+t2+t3)
 plt.savefig("fig/example_hyperplane.pdf")
 plt.close()

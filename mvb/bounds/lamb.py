@@ -24,8 +24,8 @@ def lamb(emp_risk, n, KL, delta=0.05):
 def optimizeLamb(emp_risks, n, delta=0.05, eps=10**-9, abc_pi=None):
     m = len(emp_risks)
     n = float(n)
-    pi  = uniform_distribution(m) if abc_pi is None else np.copy(abc_pi)
-    rho = uniform_distribution(m) if abc_pi is None else np.copy(abc_pi)
+    pi  = np.array(uniform_distribution(m) if abc_pi is None else np.copy(abc_pi))
+    rho = np.array(uniform_distribution(m) if abc_pi is None else np.copy(abc_pi))
     KL = kl(rho,pi)
 
     lamb = 1.0
@@ -37,8 +37,8 @@ def optimizeLamb(emp_risks, n, delta=0.05, eps=10**-9, abc_pi=None):
     while bound-upd > eps:
         bound = upd
         lamb = 2.0 / (sqrt((2.0*n*emp_risk)/(KL+log(2.0*sqrt(n)/delta)) + 1.0) + 1.0)
-        for h in range(m):
-            rho[h] = pi[h]*exp(-lamb*n*emp_risks[h])
+        # TODO this line underflows for large N
+        rho = pi*np.exp(-lamb*n*emp_risks)
         rho /= np.sum(rho)
 
         emp_risk = np.average(emp_risks, weights=rho)
