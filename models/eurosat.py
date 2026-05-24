@@ -28,10 +28,31 @@ def MLP():
         nn.LazyLinear(10),
     )
 
-from torchvision.models import resnet18 as RN18
-def resnet18(n_cats=10, weights="IMAGENET1K_V1"):
-    mlp = RN18(weights="IMAGENET1K_V1")
+
+def resnet18(n_cats=10, weights=None):
+    from torchvision.models import resnet18 as RN18
+    mlp = RN18(weights=weights)
     mlp.fc = nn.Linear(mlp.fc.in_features, n_cats)
+    return mlp
+
+def densenet(n_cats=10, weights=None):
+    from torchvision.models import densenet121
+    mlp = densenet121(weights=weights, num_classes=n_cats)
+    return mlp
+
+def efficientnet(n_cats=10, weights=None):
+    from torchvision.models import efficientnet_b0
+    mlp = efficientnet_b0(weights=weights, num_classes=n_cats)
+    return mlp
+
+def convnext(n_cats=10, weights=None):
+    from torchvision.models import convnext_tiny
+    mlp = convnext_tiny(weights=weights, num_classes=n_cats)
+    return mlp
+
+def shufflenet(n_cats=10, weights=None):
+    from torchvision.models import shufflenet_v2_x2_0
+    mlp = shufflenet_v2_x2_0(weights=weights, num_classes=n_cats)
     return mlp
 
 def gpu_or_quit() -> str:
@@ -41,7 +62,7 @@ def gpu_or_quit() -> str:
         return device
     else:
         print("No GPU allocated >:(", flush=True)
-        exit(3)
+        #exit(3)
 
 device = gpu_or_quit()
 
@@ -193,7 +214,10 @@ n_epochs = 50
 models = [
     lambda: MLP(),
     lambda: resnet18(weights=None),
-    lambda: resnet18(),
+    lambda: densenet(weights=None),
+    lambda: efficientnet(weights=None),
+    lambda: convnext(weights=None),
+    lambda: shufflenet(weights=None),
 ]
 
 
@@ -226,7 +250,9 @@ except:
     print("Woops!")
 
 np.savez_compressed(
-    "multimodel_eurosat.npz",
+    "multimodel_eurosat_2.npz",
+    description=np.array("Results shape, first axis Model in [ResNet18, DenseNet121, EffecientNet B0, ConvNeXt Tiny, ShuffleNet])"
+                         "then training set red or green, then eval set red or green, then run, n examples for n categories"),
     validation=res_val,
     test=res_test,
     val_labels=np.array(
