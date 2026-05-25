@@ -113,6 +113,10 @@ def loss(rho, X, y):
     votes = (rho[:,None,None] * X).sum(0).argmax(-1)
     return 1-(votes == y).mean()
 
+def loss_oob(rho, idx, X, y):
+    votes = (rho[:,None,None] * X).sum(0).argmax(-1)
+    return 1-(votes == y[idx]).mean()
+
 def est_feasible_region(X, y, n_iter=1000):
     n_models, *_ = X.shape
     simplex = np.random.randint(0,n_models+1,size=(1000,n_models))
@@ -173,7 +177,7 @@ def calc_oob_stats(val_preds, val_idx, val_labels, test_preds, test_labels, n_it
         "fo_bound": bound_fo,
         "fo_test_loss": loss(rho_fo, np.eye(n_cats)[test_preds], test_labels),
         "uni_test_loss": loss(uni, np.eye(n_cats)[test_preds], test_labels),
-        "uni_bound": loss(uni, np.eye(n_cats)[val_preds], val_labels) + np.sqrt(np.log(2/0.05)/(2*len(val_preds[0]))),
+        #"uni_bound": loss(uni, np.eye(n_cats)[val_preds], val_labels) + np.sqrt(np.log(2/0.05)/(2*len(val_preds[0]))),
     }
 
 
@@ -704,3 +708,67 @@ def plot_scatter_cifar():
 
     plt.savefig(f"fig/cifar_perf.pdf")
     plt.close()
+
+
+def load_last_all():
+    pass
+
+
+collect = []
+res = dict(np.load(Path("~/Downloads/pac-bayes-predictions/imdb_predictions.npz").expanduser()))
+for _ in tqdm(range(10)):
+    # Last
+    val_labels = res["labels_validation"]
+    test_labels = res["labels_test"]
+    val_preds = res["predictions_validation"][:,-1].argmax(-1)
+    test_preds = res["predictions_test"][:,-1].argmax(-1)
+
+    idx = np.random.permutation(n_models)[:50]
+
+    collect.append(calc_stats(val_preds, val_labels, test_preds, test_labels, 0))
+
+    # All
+    val_preds = np.concat(res["predictions_validation"][idx]).argmax(-1)
+    test_preds = np.concat(res["predictions_test"][idx]).argmax(-1)
+
+    collect.append(calc_stats(val_preds, val_labels, test_preds, test_labels, 0))
+
+res = dict(np.load(Path("~/Downloads/pac-bayes-predictions/cifar10_preds_fix.npz").expanduser()))
+for _ in tqdm(range(10)):
+    # Last
+    val_labels = res["labels_validation"]
+    test_labels = res["labels_test"]
+    val_index = res["val_index"]
+    val_preds = res["predictions_validation"][:,-1].argmax(-1)
+    test_preds = res["predictions_test"][:,-1].argmax(-1)
+
+    n_models = val_preds.shape[0]
+    idx = np.random.permutation(n_models)[:50]
+
+    collect.append(calc_oob_stats(val_preds, val_index, val_labels, test_preds, test_labels, 0))
+
+    # All
+    val_preds = np.concat(res["predictions_validation"])[idx].argmax(-1)
+    test_preds = np.concat(res["predictions_test"])[idx].argmax(-1)
+
+    collect.append(calc_oob_stats(val_preds, val_index[idx], val_labels, test_preds, test_labels, 0))
+
+res = dict(np.load(Path("~/Downloads/pac-bayes-predictions/cifar100_preds_fix.npz").expanduser()))
+for _ in tqdm(range(10)):
+    # Last
+    val_labels = res["labels_validation"]
+    test_labels = res["labels_test"]
+    val_index = res["val_index"]
+    val_preds = res["predictions_validation"][:,-1].argmax(-1)
+    test_preds = res["predictions_test"][:,-1].argmax(-1)
+
+    n_models = val_preds.shape[0]
+    idx = np.random.permutation(n_models)[:50]
+
+    collect.append(calc_oob_stats(val_preds, val_index, val_labels, test_preds, test_labels, 0))
+
+    # All
+    val_preds = np.concat(res["predictions_validation"])[idx].argmax(-1)
+    test_preds = np.concat(res["predictions_test"])[idx].argmax(-1)
+
+    collect.append(calc_oob_stats(val_preds, val_index[idx], val_labels, test_preds, test_labels, 0))
